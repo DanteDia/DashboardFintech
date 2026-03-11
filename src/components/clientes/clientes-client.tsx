@@ -29,20 +29,16 @@ export function ClientesClient({ clientes }: ClientesClientProps) {
     );
   }, [clientes, filterType]);
 
-  const clientesOnly = clientes.filter(
-    (c) => c.tipo?.toLowerCase() === "cliente"
-  );
-  const porCobrar = clientesOnly
-    .filter((c) => (c.usdSaldo ?? 0) > 0)
-    .reduce((sum, c) => sum + (c.usdSaldo ?? 0), 0);
-  const deudas = clientesOnly
-    .filter((c) => (c.usdSaldo ?? 0) < 0)
-    .reduce((sum, c) => sum + Math.abs(c.usdSaldo ?? 0), 0);
+  // Use ALL clients for KPIs (matches column H filter in sheet)
+  const nosDeben = clientes.filter((c) => (c.usdSaldo ?? 0) > 0);
+  const lesDebemos = clientes.filter((c) => (c.usdSaldo ?? 0) < 0);
+
+  const porCobrar = nosDeben.reduce((sum, c) => sum + (c.usdSaldo ?? 0), 0);
+  const deudas = lesDebemos.reduce((sum, c) => sum + Math.abs(c.usdSaldo ?? 0), 0);
 
   const topDeudores = useMemo(
     () =>
-      clientesOnly
-        .filter((c) => (c.usdSaldo ?? 0) > 0)
+      nosDeben
         .sort((a, b) => (b.usdSaldo ?? 0) - (a.usdSaldo ?? 0))
         .slice(0, 10)
         .map((c) => ({
@@ -52,13 +48,12 @@ export function ClientesClient({ clientes }: ClientesClientProps) {
               : c.cliente,
           saldo: c.usdSaldo ?? 0,
         })),
-    [clientesOnly]
+    [nosDeben]
   );
 
   const topAcreedores = useMemo(
     () =>
-      clientesOnly
-        .filter((c) => (c.usdSaldo ?? 0) < 0)
+      lesDebemos
         .sort((a, b) => (a.usdSaldo ?? 0) - (b.usdSaldo ?? 0))
         .slice(0, 10)
         .map((c) => ({
@@ -68,7 +63,7 @@ export function ClientesClient({ clientes }: ClientesClientProps) {
               : c.cliente,
           saldo: Math.abs(c.usdSaldo ?? 0),
         })),
-    [clientesOnly]
+    [lesDebemos]
   );
 
   const columns: Column<CarteraCliente>[] = [
@@ -131,18 +126,18 @@ export function ClientesClient({ clientes }: ClientesClientProps) {
           value={formatCurrency(porCobrar)}
           icon={TrendingUp}
           trend="up"
-          subtitle={`${clientesOnly.filter((c) => (c.usdSaldo ?? 0) > 0).length} clientes`}
+          subtitle={`${nosDeben.length} clientes`}
         />
         <KpiCard
           title="Deudas (les debemos)"
           value={formatCurrency(deudas)}
           icon={TrendingDown}
           trend="down"
-          subtitle={`${clientesOnly.filter((c) => (c.usdSaldo ?? 0) < 0).length} clientes`}
+          subtitle={`${lesDebemos.length} clientes`}
         />
         <KpiCard
           title="Total Clientes"
-          value={String(clientesOnly.length)}
+          value={String(clientes.length)}
           icon={Users}
         />
       </div>
