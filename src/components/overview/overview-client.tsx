@@ -15,21 +15,22 @@ import {
 } from "recharts";
 import { KpiCard } from "@/components/shared/kpi-card";
 import { Operacion, Movimiento, CarteraBanco, CarteraCliente } from "@/types/sheets";
-import { OPERATION_COLORS, STATUS_COLORS } from "@/lib/constants";
+import { OPERATION_COLORS, STATUS_COLORS, MONTHS } from "@/lib/constants";
 import {
   formatCurrency,
   formatCurrencyRound,
   formatCompactNumber,
+  toDate,
 } from "@/lib/utils";
 import {
   DollarSign,
   TrendingUp,
-  TrendingDown,
   Hash,
   Users,
   Receipt,
   Landmark,
   AlertCircle,
+  ArrowLeftRight,
 } from "lucide-react";
 
 interface DashboardKpis {
@@ -75,8 +76,22 @@ export function OverviewClient({
   const [filterType, setFilterType] = useState<string>("all");
   const [filterClient, setFilterClient] = useState<string>("all");
   const [filterStatus, setFilterStatus] = useState<string>("all");
+  const [filterMonth, setFilterMonth] = useState<string>("all");
 
-  // Unique values for filters
+  // Available months from movimientos
+  const availableMonths = useMemo(() => {
+    const months = new Set<string>();
+    movimientos.forEach((m) => {
+      const d = toDate(m.fecha);
+      if (d) {
+        const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+        months.add(key);
+      }
+    });
+    return [...months].sort().reverse();
+  }, [movimientos]);
+
+  // Unique clients for filter
   const uniqueClients = useMemo(
     () => [...new Set(operaciones.map((o) => o.cliente).filter(Boolean))].sort(),
     [operaciones]
@@ -94,23 +109,34 @@ export function OverviewClient({
     });
   }, [operaciones, filterStatus, filterType, filterClient]);
 
-  // Filtered movimientos based on operation type filter
+  // Filtered movimientos based on filters
   const filteredMovimientos = useMemo(() => {
-    if (filterType === "all" && filterClient === "all") return movimientos;
-    // Get matching operation IDs from filtered ops
-    const opIds = new Set(filteredOps.map((o) => o.operacion));
-    return movimientos.filter((m) => opIds.has(m.op));
-  }, [movimientos, filteredOps, filterType, filterClient]);
+    let result = movimientos;
+
+    // Month filter
+    if (filterMonth !== "all") {
+      const [year, month] = filterMonth.split("-").map(Number);
+      result = result.filter((m) => {
+        const d = toDate(m.fecha);
+        if (!d) return false;
+        return d.getFullYear() === year && d.getMonth() + 1 === month;
+      });
+    }
+
+    // Type/client filter via operation IDs
+    if (filterType !== "all" || filterClient !== "all") {
+      const opIds = new Set(filteredOps.map((o) => o.operacion));
+      result = result.filter((m) => opIds.has(m.op));
+    }
+
+    return result;
+  }, [movimientos, filteredOps, filterType, filterClient, filterMonth]);
 
   // KPI computations
   const totalTransacciones = filteredMovimientos.length;
   const uniqueClientCount = new Set(
     filteredOps.map((o) => o.cliente).filter(Boolean)
   ).size;
-  const margenBruto =
-    dashboardKpis.costos > 0
-      ? ((dashboardKpis.ganancias / dashboardKpis.costos) * 100).toFixed(2)
-      : "0";
 
   // Bank totals
   const totalBancos = bancos.reduce((sum, b) => sum + (b.usdSaldo ?? 0), 0);
@@ -131,29 +157,43 @@ export function OverviewClient({
   ).length;
   const abiertas = filteredOps.length - cerradas;
 
-  // Provider dependency: costs by operation type as % of total egresos
+  // Provider dependency: ganancia vs costos ratio per type
+  // Shows how much more we'd earn if we were our own providers
   const providerDependency = useMemo(() => {
-    const costByType: Record<string, number> = {};
+    const dataByType: Record<string, { ganancia: number; costo: number }> = {};
     filteredOps.forEach((op) => {
       const tipo = getOpType(op.operacion);
-      costByType[tipo] = (costByType[tipo] || 0) + Math.abs(op.egreso ?? 0);
+      if (!dataByType[tipo]) dataByType[tipo] = { ganancia: 0, costo: 0 };
+      dataByType[tipo].ganancia += op.comision ?? 0;
+      dataByType[tipo].costo += Math.abs(op.egreso ?? 0) - Math.abs(op.ingreso ?? 0) + (op.comision ?? 0);
     });
-    const total = Object.values(costByType).reduce((s, v) => s + v, 0);
-    if (total === 0) return [];
+
+    // Actually: costo to providers = egreso, ganancia = comision
+    // Ratio = comision / egreso → what % of money flowing out we keep as profit
+    const costByType: Record<string, { comision: number; egreso: number }> = {};
+    filteredOps.forEach((op) => {
+      const tipo = getOpType(op.operacion);
+      if (!costByType[tipo]) costByType[tipo] = { comision: 0, egreso: 0 };
+      costByType[tipo].comision += op.comision ?? 0;
+      costByType[tipo].egreso += Math.abs(op.egreso ?? 0);
+    });
+
     return Object.entries(costByType)
-      .map(([name, value]) => ({
+      .filter(([, v]) => v.egreso > 0)
+      .map(([name, v]) => ({
         name,
-        value,
-        pct: ((value / total) * 100).toFixed(1),
+        ganancia: v.comision,
+        costo: v.egreso - v.comision,
+        ratio: ((v.comision / v.egreso) * 100).toFixed(1),
         color: OPERATION_COLORS[name] || "#94a3b8",
       }))
-      .sort((a, b) => b.value - a.value);
+      .sort((a, b) => b.ganancia + b.costo - (a.ganancia + a.costo));
   }, [filteredOps]);
 
-  // Income gauge
-  const bestMonthTarget = Math.max(dashboardKpis.ingresos * 1.15, 1);
-  const incomeProgress = Math.min(
-    (dashboardKpis.ingresos / bestMonthTarget) * 100,
+  // Ganancias gauge
+  const bestMonthTarget = Math.max(dashboardKpis.ganancias * 1.15, 1);
+  const gananciaProgress = Math.min(
+    (dashboardKpis.ganancias / bestMonthTarget) * 100,
     100
   );
 
@@ -195,21 +235,21 @@ export function OverviewClient({
     [bancos]
   );
 
+  // Format month label
+  function formatMonthLabel(key: string) {
+    const [year, month] = key.split("-").map(Number);
+    return `${MONTHS[month - 1]} ${year}`;
+  }
+
   return (
     <div className="space-y-6">
-      {/* KPI Cards - Row 1: Looker style */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-7 gap-3">
+      {/* KPI Cards - Row 1 */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
         <KpiCard
-          title="Ingresos"
+          title="Ingresos / Egresos"
           value={formatCurrencyRound(dashboardKpis.ingresos)}
-          icon={DollarSign}
-          trend="up"
-        />
-        <KpiCard
-          title="Margen Bruto"
-          value={`${margenBruto}%`}
-          subtitle="Ganancias vs Costos"
-          icon={TrendingUp}
+          subtitle={`Egresos: ${formatCurrencyRound(dashboardKpis.egresos)}`}
+          icon={ArrowLeftRight}
         />
         <KpiCard
           title="# Transacciones"
@@ -222,14 +262,9 @@ export function OverviewClient({
           icon={Users}
         />
         <KpiCard
-          title="Egresos"
-          value={formatCurrencyRound(dashboardKpis.egresos)}
-          icon={TrendingDown}
-        />
-        <KpiCard
           title="Ganancias"
           value={formatCurrencyRound(dashboardKpis.ganancias)}
-          icon={DollarSign}
+          icon={TrendingUp}
           trend="up"
         />
         <KpiCard
@@ -270,6 +305,18 @@ export function OverviewClient({
       {/* Filters */}
       <div className="flex flex-wrap gap-3">
         <select
+          value={filterMonth}
+          onChange={(e) => setFilterMonth(e.target.value)}
+          className="px-3 py-2 rounded-lg border bg-background text-sm"
+        >
+          <option value="all">Todos los meses</option>
+          {availableMonths.map((m) => (
+            <option key={m} value={m}>
+              {formatMonthLabel(m)}
+            </option>
+          ))}
+        </select>
+        <select
           value={filterType}
           onChange={(e) => setFilterType(e.target.value)}
           className="px-3 py-2 rounded-lg border bg-background text-sm"
@@ -306,52 +353,64 @@ export function OverviewClient({
         </select>
       </div>
 
-      {/* Charts Row 1: Provider Dependency + Income Gauge */}
+      {/* Charts Row 1: Provider Dependency + Ganancias Gauge */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Provider Dependency Donut */}
+        {/* Provider Dependency: Ganancia vs Costos ratio */}
         <div className="bg-card rounded-xl border p-6">
-          <h3 className="text-sm font-medium text-muted-foreground mb-4">
-            Dependencia de Proveedores (Costos por Tipo)
+          <h3 className="text-sm font-medium text-muted-foreground mb-1">
+            Dependencia de Proveedores
           </h3>
+          <p className="text-xs text-muted-foreground mb-4">
+            Ganancia vs Costo por tipo — si fueramos nuestros propios proveedores
+          </p>
           <div className="h-72">
             <ResponsiveContainer width="100%" height="100%">
-              <PieChart>
-                <Pie
-                  data={providerDependency}
-                  cx="50%"
-                  cy="50%"
-                  innerRadius={65}
-                  outerRadius={100}
-                  paddingAngle={2}
-                  dataKey="value"
-                  label={({ pct }) => `${pct}%`}
-                  labelLine={false}
-                  fontSize={12}
-                >
-                  {providerDependency.map((entry, i) => (
-                    <Cell
-                      key={i}
-                      fill={entry.color}
-                      stroke="white"
-                      strokeWidth={2}
-                    />
-                  ))}
-                </Pie>
-                <Legend
-                  formatter={(value) => (
-                    <span className="text-xs">{value}</span>
-                  )}
+              <BarChart
+                data={providerDependency}
+                layout="vertical"
+                margin={{ left: 10, right: 10 }}
+              >
+                <XAxis
+                  type="number"
+                  tickFormatter={(v) => formatCompactNumber(v)}
+                  fontSize={11}
                 />
-                <Tooltip formatter={(v) => formatCurrency(Number(v))} />
-              </PieChart>
+                <YAxis
+                  type="category"
+                  dataKey="name"
+                  width={110}
+                  fontSize={11}
+                  tick={{ fill: "#64748b" }}
+                />
+                <Tooltip
+                  formatter={(v, name) =>
+                    [formatCurrency(Number(v)), name === "ganancia" ? "Ganancia" : "Costo proveedor"]
+                  }
+                />
+                <Legend />
+                <Bar
+                  dataKey="ganancia"
+                  name="Ganancia"
+                  stackId="a"
+                  fill="#34a853"
+                  radius={[0, 0, 0, 0]}
+                />
+                <Bar
+                  dataKey="costo"
+                  name="Costo proveedor"
+                  stackId="a"
+                  fill="#ea4335"
+                  radius={[0, 4, 4, 0]}
+                />
+              </BarChart>
             </ResponsiveContainer>
           </div>
         </div>
 
-        {/* Income vs Target Gauge */}
+        {/* Ganancias vs Target Gauge */}
         <div className="bg-card rounded-xl border p-6">
           <h3 className="text-sm font-medium text-muted-foreground mb-4">
-            Ingresos vs Mejor Mes
+            Ganancias vs Mejor Mes
           </h3>
           <div className="flex flex-col items-center justify-center h-72 gap-4">
             <div className="relative w-56 h-28">
@@ -369,7 +428,7 @@ export function OverviewClient({
                   stroke="url(#overviewGaugeGradient)"
                   strokeWidth="16"
                   strokeLinecap="round"
-                  strokeDasharray={`${incomeProgress * 2.51} 251`}
+                  strokeDasharray={`${gananciaProgress * 2.51} 251`}
                 />
                 <defs>
                   <linearGradient
@@ -385,7 +444,7 @@ export function OverviewClient({
                   </linearGradient>
                 </defs>
                 {(() => {
-                  const angle = Math.PI - (incomeProgress / 100) * Math.PI;
+                  const angle = Math.PI - (gananciaProgress / 100) * Math.PI;
                   const nx = 100 + 65 * Math.cos(angle);
                   const ny = 100 - 65 * Math.sin(angle);
                   return (
@@ -410,11 +469,11 @@ export function OverviewClient({
               </svg>
             </div>
             <div className="text-center">
-              <p className="text-3xl font-bold text-foreground">
-                {formatCurrencyRound(dashboardKpis.ingresos)}
+              <p className="text-3xl font-bold text-emerald-600">
+                {formatCurrencyRound(dashboardKpis.ganancias)}
               </p>
               <p className="text-sm text-muted-foreground mt-1">
-                {incomeProgress.toFixed(0)}% del objetivo
+                {gananciaProgress.toFixed(0)}% del objetivo
               </p>
             </div>
           </div>
