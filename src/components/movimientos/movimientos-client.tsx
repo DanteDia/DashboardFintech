@@ -17,8 +17,7 @@ import { DataTable, Column } from "@/components/shared/data-table";
 import { VerificationBadge } from "@/components/shared/status-badge";
 import { Movimiento } from "@/types/sheets";
 import { VERIFICATION_COLORS } from "@/lib/constants";
-import { formatCurrency, formatDate, formatCompactNumber } from "@/lib/utils";
-import { format } from "date-fns";
+import { formatCurrency, formatDate, formatCompactNumber, toDate } from "@/lib/utils";
 
 interface MovimientosClientProps {
   movimientos: Movimiento[];
@@ -47,8 +46,9 @@ export function MovimientosClient({ movimientos }: MovimientosClientProps) {
   const dailyVolume = useMemo(() => {
     const map: Record<string, number> = {};
     movimientos.forEach((m) => {
-      if (m.fecha) {
-        const key = format(m.fecha, "yyyy-MM-dd");
+      const d = toDate(m.fecha);
+      if (d) {
+        const key = d.toISOString().slice(0, 10);
         map[key] = (map[key] || 0) + Math.abs(m.importe ?? 0);
       }
     });
@@ -79,7 +79,7 @@ export function MovimientosClient({ movimientos }: MovimientosClientProps) {
     {
       key: "fecha",
       header: "Fecha",
-      accessor: (r) => r.fecha?.getTime() ?? 0,
+      accessor: (r) => toDate(r.fecha)?.getTime() ?? 0,
       render: (r) => formatDate(r.fecha),
     },
     {

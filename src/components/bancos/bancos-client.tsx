@@ -21,7 +21,17 @@ interface BancosClientProps {
   bancosVerificado: CarteraBancoVerificado[];
 }
 
-export function BancosClient({ bancos, bancosVerificado }: BancosClientProps) {
+function isExcluded(name: string) {
+  const n = name.toLowerCase().trim();
+  // Exclude "Mercury Cards", "Mercury Cards - Salidas", "Mercury Cards - Ingresos"
+  // But keep "Mercury Motoneta", "Mercury Consumos", etc.
+  return n === "mercury cards" || (n.startsWith("mercury cards") && (n.includes("salida") || n.includes("ingreso")));
+}
+
+export function BancosClient({ bancos: rawBancos, bancosVerificado: rawBancosVerif }: BancosClientProps) {
+  const bancos = rawBancos.filter((b) => !isExcluded(b.cliente));
+  const bancosVerificado = rawBancosVerif.filter((b) => !isExcluded(b.cliente));
+
   const totalSaldo = bancos.reduce((sum, b) => sum + (b.usdSaldo ?? 0), 0);
   const totalPendiente = bancos.reduce(
     (sum, b) => sum + (b.pendiente ?? 0),

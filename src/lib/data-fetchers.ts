@@ -43,14 +43,16 @@ export const getOverviewData = unstable_cache(
 // Operaciones page data
 export const getOperacionesData = unstable_cache(
   async () => {
-    const [operacionesRows, movimientosRows] = await fetchSheetRanges([
+    const [operacionesRows, movimientosRows, dashboardRows] = await fetchSheetRanges([
       SHEET_CONFIG.operaciones.range,
       SHEET_CONFIG.movimientos.range,
+      SHEET_CONFIG.dashboard.range,
     ]);
 
     return {
       operaciones: transformOperaciones(operacionesRows),
       movimientos: transformMovimientos(movimientosRows),
+      dashboard: transformDashboardKPIs(dashboardRows),
     };
   },
   ["operaciones-data"],

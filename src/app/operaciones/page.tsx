@@ -4,7 +4,10 @@ import { PageContainer } from "@/components/layout/page-container";
 import { OperacionesClient } from "@/components/operaciones/operaciones-client";
 
 export default async function OperacionesPage() {
-  const { operaciones, movimientos } = await getOperacionesData();
+  const { operaciones, movimientos, dashboard } = await getOperacionesData();
+
+  // Get USD KPIs from dashboard
+  const usdData = dashboard.monedas.find((m) => m.moneda === "USD");
 
   return (
     <PageContainer
@@ -14,6 +17,12 @@ export default async function OperacionesPage() {
       <OperacionesClient
         operaciones={operaciones}
         movimientos={movimientos}
+        dashboardKpis={{
+          ingresos: usdData?.ingresos ?? 0,
+          egresos: usdData?.egresos ?? 0,
+          costos: usdData?.costo1 ?? 0,
+          ganancias: usdData?.ganancias ?? 0,
+        }}
       />
     </PageContainer>
   );

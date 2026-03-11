@@ -51,13 +51,22 @@ export function parseDate(value: string | null | undefined): Date | null {
   return isNaN(date.getTime()) ? null : date;
 }
 
-export function formatDate(date: Date | null | undefined): string {
+export function formatDate(date: Date | string | null | undefined): string {
   if (!date) return "-";
-  return date.toLocaleDateString("es-AR", {
+  const d = typeof date === "string" ? new Date(date) : date;
+  if (isNaN(d.getTime())) return "-";
+  return d.toLocaleDateString("es-AR", {
     year: "numeric",
     month: "2-digit",
     day: "2-digit",
   });
+}
+
+/** Safely convert a possibly-serialized Date back to a Date object */
+export function toDate(value: Date | string | null | undefined): Date | null {
+  if (!value) return null;
+  const d = typeof value === "string" ? new Date(value) : value;
+  return isNaN(d.getTime()) ? null : d;
 }
 
 export function isEmptyRow(row: string[]): boolean {
