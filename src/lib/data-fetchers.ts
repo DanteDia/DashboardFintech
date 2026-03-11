@@ -21,12 +21,13 @@ const REVALIDATE = 300; // 5 minutes
 // Overview page data
 export const getOverviewData = unstable_cache(
   async () => {
-    const [dashboardRows, bancosRows, clientesRows, operacionesRows] =
+    const [dashboardRows, bancosRows, clientesRows, operacionesRows, movimientosRows] =
       await fetchSheetRanges([
         SHEET_CONFIG.dashboard.range,
         SHEET_CONFIG.carteraBancos.range,
         SHEET_CONFIG.carteraClientes.range,
         SHEET_CONFIG.operaciones.range,
+        SHEET_CONFIG.movimientos.range,
       ]);
 
     return {
@@ -34,6 +35,7 @@ export const getOverviewData = unstable_cache(
       bancos: transformCarteraBancos(bancosRows),
       clientes: transformCarteraClientes(clientesRows),
       operaciones: transformOperaciones(operacionesRows),
+      movimientos: transformMovimientos(movimientosRows),
     };
   },
   ["overview-data"],
