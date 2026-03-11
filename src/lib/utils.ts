@@ -5,14 +5,18 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
-export function formatCurrency(value: number | null | undefined, currency = "USD"): string {
+export function formatCurrency(value: number | null | undefined, currency = "USD", decimals = 2): string {
   if (value == null || isNaN(value)) return "-";
   return new Intl.NumberFormat("en-US", {
     style: "currency",
     currency,
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
+    minimumFractionDigits: decimals,
+    maximumFractionDigits: decimals,
   }).format(value);
+}
+
+export function formatCurrencyRound(value: number | null | undefined, currency = "USD"): string {
+  return formatCurrency(value, currency, 0);
 }
 
 export function formatNumber(value: number | null | undefined): string {

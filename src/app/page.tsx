@@ -6,7 +6,7 @@ import {
   BankBalanceChart,
   OperationsStatusChart,
 } from "@/components/overview/overview-charts";
-import { formatCurrency } from "@/lib/utils";
+import { formatCurrencyRound } from "@/lib/utils";
 import {
   DollarSign,
   TrendingDown,
@@ -28,16 +28,19 @@ export default async function OverviewPage() {
   // Bank totals
   const totalBancos = bancos.reduce((sum, b) => sum + (b.usdSaldo ?? 0), 0);
 
-  // Client receivables/payables
-  const clientesOnly = clientes.filter(
-    (c) => c.tipo?.toLowerCase() === "cliente"
+  // Client receivables/payables — all clients with saldo, regardless of tipo
+  const clientesConSaldo = clientes.filter((c) => c.usdSaldo != null && c.usdSaldo !== 0);
+  const clientesNosDeben = clientes.filter((c) => (c.usdSaldo ?? 0) > 0);
+  const clientesLesDebemos = clientes.filter((c) => (c.usdSaldo ?? 0) < 0);
+
+  const cuentasPorCobrar = clientesNosDeben.reduce(
+    (sum, c) => sum + (c.usdSaldo ?? 0),
+    0
   );
-  const cuentasPorCobrar = clientesOnly
-    .filter((c) => (c.usdSaldo ?? 0) > 0)
-    .reduce((sum, c) => sum + (c.usdSaldo ?? 0), 0);
-  const deudas = clientesOnly
-    .filter((c) => (c.usdSaldo ?? 0) < 0)
-    .reduce((sum, c) => sum + (c.usdSaldo ?? 0), 0);
+  const deudas = clientesLesDebemos.reduce(
+    (sum, c) => sum + (c.usdSaldo ?? 0),
+    0
+  );
 
   // Operations counts
   const cerradas = operaciones.filter(
@@ -54,38 +57,38 @@ export default async function OverviewPage() {
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
         <KpiCard
           title="Ingresos"
-          value={formatCurrency(ingresos)}
+          value={formatCurrencyRound(ingresos)}
           icon={DollarSign}
           trend="up"
         />
         <KpiCard
           title="Egresos"
-          value={formatCurrency(egresos)}
+          value={formatCurrencyRound(egresos)}
           icon={TrendingDown}
         />
         <KpiCard
           title="Ganancias"
-          value={formatCurrency(ganancias)}
+          value={formatCurrencyRound(ganancias)}
           icon={TrendingUp}
           trend="up"
         />
         <KpiCard
           title="Balance Bancos"
-          value={formatCurrency(totalBancos)}
+          value={formatCurrencyRound(totalBancos)}
           icon={Landmark}
         />
         <KpiCard
           title="Cuentas x Cobrar"
-          value={formatCurrency(cuentasPorCobrar)}
+          value={formatCurrencyRound(cuentasPorCobrar)}
           icon={Users}
-          subtitle={`${clientesOnly.filter((c) => (c.usdSaldo ?? 0) > 0).length} clientes`}
+          subtitle={`${clientesNosDeben.length} clientes`}
         />
         <KpiCard
           title="Deudas"
-          value={formatCurrency(Math.abs(deudas))}
+          value={formatCurrencyRound(Math.abs(deudas))}
           icon={AlertCircle}
           trend="down"
-          subtitle={`${clientesOnly.filter((c) => (c.usdSaldo ?? 0) < 0).length} clientes`}
+          subtitle={`${clientesLesDebemos.length} clientes`}
         />
       </div>
 
