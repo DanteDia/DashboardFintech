@@ -17,7 +17,8 @@ export const OPERATION_COLORS: Record<string, string> = {
 };
 
 export const STATUS_COLORS = {
-  CERRADO: { bg: "#d4edda", text: "#155724", label: "Cerrado" },
+  CERRADO: { bg: "#d4edda", text: "#155724", label: "Cerrada" },
+  ABIERTA: { bg: "#fff3cd", text: "#856404", label: "Abierta" },
   DEBE: { bg: "#fff3cd", text: "#856404", label: "Debe" },
   DEBEMOS: { bg: "#f8d7da", text: "#721c24", label: "Debemos" },
 } as const;

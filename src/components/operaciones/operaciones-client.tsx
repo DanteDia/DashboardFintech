@@ -64,6 +64,45 @@ export function OperacionesClient({
   const [filterType, setFilterType] = useState<string>("all");
   const [filterClient, setFilterClient] = useState<string>("all");
 
+  // Derive operation closed/open status from movimientos
+  const opClosedMap = useMemo(() => {
+    const inflows: Record<string, number> = {};
+    const outflows: Record<string, number> = {};
+    const comisiones: Record<string, number> = {};
+
+    movimientos.forEach((m) => {
+      const opCode = m.op?.trim();
+      const vincCode = m.vinculante?.trim();
+      if (opCode) {
+        inflows[opCode] = (inflows[opCode] || 0) + (m.importe ?? 0);
+        comisiones[opCode] = (comisiones[opCode] || 0) + (m.cImpo ?? 0);
+      }
+      if (vincCode) {
+        outflows[vincCode] = (outflows[vincCode] || 0) + (m.importe ?? 0);
+      }
+    });
+
+    const map = new Map<string, boolean>();
+    const allCodes = new Set([...Object.keys(inflows), ...Object.keys(outflows)]);
+    allCodes.forEach((code) => {
+      const hasIn = (inflows[code] ?? 0) > 0;
+      const hasOut = (outflows[code] ?? 0) > 0;
+      if (hasIn && hasOut) {
+        const diff = (inflows[code] ?? 0) - (outflows[code] ?? 0);
+        const comision = comisiones[code] ?? 0;
+        map.set(code, Math.abs(diff - comision) <= 1);
+      } else {
+        map.set(code, false);
+      }
+    });
+    return map;
+  }, [movimientos]);
+
+  // Helper to get derived status for an operation
+  function getDerivedStatus(op: Operacion): string {
+    return opClosedMap.get(op.operacion) === true ? "CERRADO" : "ABIERTA";
+  }
+
   // Unique clients for filter
   const uniqueClients = useMemo(
     () =>
@@ -73,17 +112,16 @@ export function OperacionesClient({
 
   const filteredOps = useMemo(() => {
     return operaciones.filter((op) => {
-      if (
-        filterStatus !== "all" &&
-        op.cierre.toUpperCase().trim() !== filterStatus
-      )
-        return false;
+      if (filterStatus !== "all") {
+        const derived = opClosedMap.get(op.operacion) === true ? "CERRADO" : "ABIERTA";
+        if (derived !== filterStatus) return false;
+      }
       if (filterType !== "all" && getOpType(op.operacion) !== filterType)
         return false;
       if (filterClient !== "all" && op.cliente !== filterClient) return false;
       return true;
     });
-  }, [operaciones, filterStatus, filterType, filterClient]);
+  }, [operaciones, filterStatus, filterType, filterClient, opClosedMap]);
 
   // KPI computations
   const totalTransacciones = movimientos.length;
@@ -203,8 +241,8 @@ export function OperacionesClient({
     {
       key: "cierre",
       header: "Estado",
-      accessor: (r) => r.cierre,
-      render: (r) => <StatusBadge status={r.cierre} />,
+      accessor: (r) => getDerivedStatus(r),
+      render: (r) => <StatusBadge status={getDerivedStatus(r)} />,
     },
   ];
 
@@ -285,9 +323,8 @@ export function OperacionesClient({
           className="px-3 py-2 rounded-lg border bg-background text-sm"
         >
           <option value="all">Todos los estados</option>
-          <option value="CERRADO">Cerrado</option>
-          <option value="DEBE">Debe</option>
-          <option value="DEBEMOS">Debemos</option>
+          <option value="CERRADO">Cerrada</option>
+          <option value="ABIERTA">Abierta</option>
         </select>
       </div>
 
@@ -303,10 +340,8 @@ export function OperacionesClient({
           row.cliente.toLowerCase().includes(q)
         }
         rowClassName={(row) => {
-          const s = row.cierre.toUpperCase().trim();
-          if (s === "DEBE") return "bg-[#fff3cd]/30";
-          if (s === "DEBEMOS") return "bg-[#f8d7da]/30";
-          return "";
+          const closed = opClosedMap.get(row.operacion) === true;
+          return closed ? "" : "bg-[#fff3cd]/20";
         }}
       />
 
@@ -328,7 +363,8 @@ export function OperacionesClient({
                   outerRadius={100}
                   paddingAngle={2}
                   dataKey="value"
-                  label={({ pct }) => `${pct}%`}
+                  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                  label={(props: any) => `${props.pct}%`}
                   labelLine={false}
                   fontSize={12}
                 >

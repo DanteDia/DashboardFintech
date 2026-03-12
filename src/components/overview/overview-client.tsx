@@ -91,23 +91,62 @@ export function OverviewClient({
     return [...months].sort().reverse();
   }, [movimientos]);
 
+  // Derive operation closed/open status from movimientos
+  // An op is CERRADO when: it has both inflows (op column) and outflows (vinculante column)
+  // AND the difference between inflows and outflows ≈ comisiones (±1 tolerance for rounding)
+  const opClosedMap = useMemo(() => {
+    const inflows: Record<string, number> = {};
+    const outflows: Record<string, number> = {};
+    const comisiones: Record<string, number> = {};
+
+    movimientos.forEach((m) => {
+      const opCode = m.op?.trim();
+      const vincCode = m.vinculante?.trim();
+
+      if (opCode) {
+        inflows[opCode] = (inflows[opCode] || 0) + (m.importe ?? 0);
+        comisiones[opCode] = (comisiones[opCode] || 0) + (m.cImpo ?? 0);
+      }
+      if (vincCode) {
+        outflows[vincCode] = (outflows[vincCode] || 0) + (m.importe ?? 0);
+      }
+    });
+
+    const map = new Map<string, boolean>();
+    const allCodes = new Set([...Object.keys(inflows), ...Object.keys(outflows)]);
+    allCodes.forEach((code) => {
+      const hasIn = (inflows[code] ?? 0) > 0;
+      const hasOut = (outflows[code] ?? 0) > 0;
+      if (hasIn && hasOut) {
+        const diff = (inflows[code] ?? 0) - (outflows[code] ?? 0);
+        const comision = comisiones[code] ?? 0;
+        map.set(code, Math.abs(diff - comision) <= 1);
+      } else {
+        map.set(code, false);
+      }
+    });
+    return map;
+  }, [movimientos]);
+
   // Unique clients for filter
   const uniqueClients = useMemo(
     () => [...new Set(operaciones.map((o) => o.cliente).filter(Boolean))].sort(),
     [operaciones]
   );
 
-  // Filtered operaciones
+  // Filtered operaciones (status filter uses movimientos-derived status)
   const filteredOps = useMemo(() => {
     return operaciones.filter((op) => {
-      if (filterStatus !== "all" && op.cierre.toUpperCase().trim() !== filterStatus)
-        return false;
+      if (filterStatus !== "all") {
+        const derived = opClosedMap.get(op.operacion) === true ? "CERRADO" : "ABIERTA";
+        if (derived !== filterStatus) return false;
+      }
       if (filterType !== "all" && getOpType(op.operacion) !== filterType)
         return false;
       if (filterClient !== "all" && op.cliente !== filterClient) return false;
       return true;
     });
-  }, [operaciones, filterStatus, filterType, filterClient]);
+  }, [operaciones, filterStatus, filterType, filterClient, opClosedMap]);
 
   // Filtered movimientos based on filters
   const filteredMovimientos = useMemo(() => {
@@ -151,9 +190,9 @@ export function OverviewClient({
     (sum, c) => sum + (c.usdSaldo ?? 0), 0
   );
 
-  // Operations counts
+  // Operations counts using movimientos-derived status
   const cerradas = filteredOps.filter(
-    (o) => o.cierre.toUpperCase().trim() === "CERRADO"
+    (o) => opClosedMap.get(o.operacion) === true
   ).length;
   const abiertas = filteredOps.length - cerradas;
 
@@ -190,36 +229,33 @@ export function OverviewClient({
       .sort((a, b) => b.ganancia + b.costo - (a.ganancia + a.costo));
   }, [filteredOps]);
 
-  // Ganancias gauge
+  // Ganancias gauge + estimated profit
   const bestMonthTarget = Math.max(dashboardKpis.ganancias * 1.15, 1);
   const gananciaProgress = Math.min(
     (dashboardKpis.ganancias / bestMonthTarget) * 100,
     100
   );
+  const today = new Date();
+  const dayOfMonth = today.getDate();
+  const daysInMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0).getDate();
+  const estimatedProfit = dayOfMonth > 0
+    ? (dashboardKpis.ganancias / dayOfMonth) * daysInMonth
+    : dashboardKpis.ganancias;
 
-  // Operations status for pie chart
+  // Operations status for pie chart (using movimientos-derived status)
   const statusData = useMemo(() => {
-    const counts = filteredOps.reduce(
-      (acc, op) => {
-        const key = op.cierre.toUpperCase().trim();
-        if (key === "CERRADO") acc.cerrado++;
-        else if (key === "DEBE") acc.debe++;
-        else if (key === "DEBEMOS") acc.debemos++;
-        else acc.otros++;
-        return acc;
-      },
-      { cerrado: 0, debe: 0, debemos: 0, otros: 0 }
-    );
+    let cerradoCount = 0;
+    let abiertaCount = 0;
+    filteredOps.forEach((op) => {
+      if (opClosedMap.get(op.operacion) === true) cerradoCount++;
+      else abiertaCount++;
+    });
     const result: { name: string; value: number; color: string }[] = [
-      { name: "Cerrado", value: counts.cerrado, color: STATUS_COLORS.CERRADO.bg },
-      { name: "Debe", value: counts.debe, color: STATUS_COLORS.DEBE.bg },
-      { name: "Debemos", value: counts.debemos, color: STATUS_COLORS.DEBEMOS.bg },
+      { name: "Cerrada", value: cerradoCount, color: STATUS_COLORS.CERRADO.bg },
+      { name: "Abierta", value: abiertaCount, color: STATUS_COLORS.DEBE.bg },
     ].filter((d) => d.value > 0);
-    if (counts.otros > 0) {
-      result.push({ name: "Otros", value: counts.otros, color: "#e2e8f0" });
-    }
     return result;
-  }, [filteredOps]);
+  }, [filteredOps, opClosedMap]);
 
   // Bank balance chart data
   const bankData = useMemo(
@@ -347,9 +383,8 @@ export function OverviewClient({
           className="px-3 py-2 rounded-lg border bg-background text-sm"
         >
           <option value="all">Todos los estados</option>
-          <option value="CERRADO">Cerrado</option>
-          <option value="DEBE">Debe</option>
-          <option value="DEBEMOS">Debemos</option>
+          <option value="CERRADO">Cerrada</option>
+          <option value="ABIERTA">Abierta</option>
         </select>
       </div>
 
@@ -468,13 +503,21 @@ export function OverviewClient({
                 </text>
               </svg>
             </div>
-            <div className="text-center">
+            <div className="text-center space-y-1">
               <p className="text-3xl font-bold text-emerald-600">
                 {formatCurrencyRound(dashboardKpis.ganancias)}
               </p>
-              <p className="text-sm text-muted-foreground mt-1">
-                {gananciaProgress.toFixed(0)}% del objetivo
+              <p className="text-xs text-muted-foreground">
+                {gananciaProgress.toFixed(0)}% del objetivo ({formatCurrencyRound(bestMonthTarget)})
               </p>
+              <div className="pt-2 border-t mt-2">
+                <p className={`text-lg font-semibold ${estimatedProfit >= bestMonthTarget ? "text-emerald-600" : "text-amber-500"}`}>
+                  Estimado: {formatCurrencyRound(estimatedProfit)}
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  Proyección fin de mes (día {dayOfMonth}/{daysInMonth})
+                </p>
+              </div>
             </div>
           </div>
         </div>
