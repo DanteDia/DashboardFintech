@@ -7,7 +7,7 @@ export function transformSalidas(rows: (string | number)[][]): Salida[] {
   return dataRows
     .filter((row) => !isEmptyRow(row.map(String)))
     .map((row) => ({
-      fecha: parseDate(String(row[0] ?? "")),
+      fecha: parseDate(row[0] ?? ""),
       ano: parseNumber(String(row[1] ?? "")),
       mes: parseNumber(String(row[2] ?? "")),
       nroOperacion: parseNumber(String(row[3] ?? "")),
@@ -31,7 +31,7 @@ export function transformCompensaciones(rows: (string | number)[][]): Compensaci
   return dataRows
     .filter((row) => !isEmptyRow(row.map(String)))
     .map((row) => ({
-      fecha: parseDate(String(row[0] ?? "")),
+      fecha: parseDate(row[0] ?? ""),
       ano: parseNumber(String(row[1] ?? "")),
       mes: parseNumber(String(row[2] ?? "")),
       nroOperacion: parseNumber(String(row[3] ?? "")),

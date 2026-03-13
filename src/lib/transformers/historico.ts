@@ -13,7 +13,7 @@ export function transformHistoricoOperaciones(
   return dataRows
     .filter((row) => !isEmptyRow(row.map(String)))
     .map((row) => ({
-      fecha: parseDate(String(row[0] ?? "")),
+      fecha: parseDate(row[0] ?? ""),
       ano: parseNumber(String(row[1] ?? "")),
       mes: parseNumber(String(row[2] ?? "")),
       nroOperacion: parseNumber(String(row[3] ?? "")),
@@ -43,7 +43,7 @@ export function transformHistoricoEntradas(
   return dataRows
     .filter((row) => !isEmptyRow(row.map(String)))
     .map((row) => ({
-      date: parseDate(String(row[0] ?? "")),
+      date: parseDate(row[0] ?? ""),
       ano: parseNumber(String(row[1] ?? "")),
       mes: parseNumber(String(row[2] ?? "")),
       paymentNumber: parseNumber(String(row[3] ?? "")),
@@ -57,7 +57,7 @@ export function transformHistoricoEntradas(
       invoicePaymentId: String(row[12] ?? ""),
       amountApplied: parseNumber(String(row[13] ?? "")),
       invoiceNumber: String(row[14] ?? ""),
-      invoiceDate: parseDate(String(row[15] ?? "")),
+      invoiceDate: parseDate(row[15] ?? ""),
     }));
 }
 
@@ -69,7 +69,7 @@ export function transformHistoricoSalidas(
   return dataRows
     .filter((row) => !isEmptyRow(row.map(String)))
     .map((row) => ({
-      fecha: parseDate(String(row[0] ?? "")),
+      fecha: parseDate(row[0] ?? ""),
       ano: parseNumber(String(row[1] ?? "")),
       mes: parseNumber(String(row[2] ?? "")),
       nroOperacion: parseNumber(String(row[3] ?? "")),

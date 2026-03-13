@@ -8,7 +8,7 @@ export function transformMovimientos(rows: (string | number)[][]): Movimiento[] 
   return dataRows
     .filter((row) => !isEmptyRow(row.map(String)))
     .map((row) => ({
-      fecha: parseDate(String(row[0] ?? "")),
+      fecha: parseDate(row[0] ?? ""),
       ano: parseNumber(String(row[1] ?? "")),
       mes: parseNumber(String(row[2] ?? "")),
       op: String(row[3] ?? ""),
