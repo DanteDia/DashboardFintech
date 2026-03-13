@@ -177,12 +177,38 @@ export function OverviewClient({
     filteredOps.map((o) => o.cliente).filter(Boolean)
   ).size;
 
+  // Compute KPIs from filteredMovimientos when any filter is active
+  const filteredKpis = useMemo(() => {
+    const anyFilterActive = filterMonth !== "all" || filterType !== "all" || filterClient !== "all";
+    if (!anyFilterActive) return dashboardKpis;
+
+    let ingresos = 0, egresos = 0, ganancias = 0, costos = 0;
+    filteredMovimientos.forEach((m) => {
+      const opCode = m.op?.trim();
+      const vincCode = m.vinculante?.trim();
+      if (opCode) {
+        ingresos += m.importe ?? 0;
+        ganancias += m.cImpo ?? 0;
+        costos += Math.abs(m.dImpo ?? 0);
+      }
+      if (vincCode) {
+        egresos += m.importe ?? 0;
+      }
+    });
+    return { ingresos, egresos, ganancias, costos };
+  }, [filteredMovimientos, dashboardKpis, filterMonth, filterType, filterClient]);
+
   // Bank totals
   const totalBancos = bancos.reduce((sum, b) => sum + (b.usdSaldo ?? 0), 0);
 
-  // Client receivables/payables
-  const clientesNosDeben = clientes.filter((c) => (c.usdSaldo ?? 0) > 0);
-  const clientesLesDebemos = clientes.filter((c) => (c.usdSaldo ?? 0) < 0);
+  // Client receivables/payables (filtered by client if selected)
+  const filteredClientes = useMemo(() => {
+    if (filterClient === "all") return clientes;
+    return clientes.filter((c) => c.cliente === filterClient);
+  }, [clientes, filterClient]);
+
+  const clientesNosDeben = filteredClientes.filter((c) => (c.usdSaldo ?? 0) > 0);
+  const clientesLesDebemos = filteredClientes.filter((c) => (c.usdSaldo ?? 0) < 0);
   const cuentasPorCobrar = clientesNosDeben.reduce(
     (sum, c) => sum + (c.usdSaldo ?? 0), 0
   );
@@ -196,51 +222,43 @@ export function OverviewClient({
   ).length;
   const abiertas = filteredOps.length - cerradas;
 
-  // Provider dependency: ganancia vs costos ratio per type
-  // Shows how much more we'd earn if we were our own providers
+  // Provider dependency from movimientos: ganancia (cImpo col M) vs costo proveedor (dImpo col Q)
+  // dImpo positive = provider pays us, negative = provider charges us
   const providerDependency = useMemo(() => {
-    const dataByType: Record<string, { ganancia: number; costo: number }> = {};
-    filteredOps.forEach((op) => {
-      const tipo = getOpType(op.operacion);
-      if (!dataByType[tipo]) dataByType[tipo] = { ganancia: 0, costo: 0 };
-      dataByType[tipo].ganancia += op.comision ?? 0;
-      dataByType[tipo].costo += Math.abs(op.egreso ?? 0) - Math.abs(op.ingreso ?? 0) + (op.comision ?? 0);
+    const byType: Record<string, { ganancia: number; costo: number }> = {};
+    filteredMovimientos.forEach((m) => {
+      const opCode = m.op?.trim();
+      if (!opCode) return;
+      const tipo = getOpType(opCode);
+      if (!byType[tipo]) byType[tipo] = { ganancia: 0, costo: 0 };
+      byType[tipo].ganancia += m.cImpo ?? 0;
+      byType[tipo].costo += Math.abs(m.dImpo ?? 0);
     });
 
-    // Actually: costo to providers = egreso, ganancia = comision
-    // Ratio = comision / egreso → what % of money flowing out we keep as profit
-    const costByType: Record<string, { comision: number; egreso: number }> = {};
-    filteredOps.forEach((op) => {
-      const tipo = getOpType(op.operacion);
-      if (!costByType[tipo]) costByType[tipo] = { comision: 0, egreso: 0 };
-      costByType[tipo].comision += op.comision ?? 0;
-      costByType[tipo].egreso += Math.abs(op.egreso ?? 0);
-    });
-
-    return Object.entries(costByType)
-      .filter(([, v]) => v.egreso > 0)
+    return Object.entries(byType)
+      .filter(([, v]) => v.ganancia > 0 || v.costo > 0)
       .map(([name, v]) => ({
         name,
-        ganancia: v.comision,
-        costo: v.egreso - v.comision,
-        ratio: ((v.comision / v.egreso) * 100).toFixed(1),
+        ganancia: v.ganancia,
+        costo: v.costo,
         color: OPERATION_COLORS[name] || "#94a3b8",
       }))
       .sort((a, b) => b.ganancia + b.costo - (a.ganancia + a.costo));
-  }, [filteredOps]);
+  }, [filteredMovimientos]);
 
   // Ganancias gauge + estimated profit
+  // Target stays unfiltered (overall month goal), but displayed value uses filteredKpis
   const bestMonthTarget = Math.max(dashboardKpis.ganancias * 1.15, 1);
   const gananciaProgress = Math.min(
-    (dashboardKpis.ganancias / bestMonthTarget) * 100,
+    (filteredKpis.ganancias / bestMonthTarget) * 100,
     100
   );
   const today = new Date();
   const dayOfMonth = today.getDate();
   const daysInMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0).getDate();
   const estimatedProfit = dayOfMonth > 0
-    ? (dashboardKpis.ganancias / dayOfMonth) * daysInMonth
-    : dashboardKpis.ganancias;
+    ? (filteredKpis.ganancias / dayOfMonth) * daysInMonth
+    : filteredKpis.ganancias;
 
   // Operations status for pie chart (using movimientos-derived status)
   const statusData = useMemo(() => {
@@ -283,8 +301,8 @@ export function OverviewClient({
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
         <KpiCard
           title="Ingresos / Egresos"
-          value={formatCurrencyRound(dashboardKpis.ingresos)}
-          subtitle={`Egresos: ${formatCurrencyRound(dashboardKpis.egresos)}`}
+          value={formatCurrencyRound(filteredKpis.ingresos)}
+          subtitle={`Egresos: ${formatCurrencyRound(filteredKpis.egresos)}`}
           icon={ArrowLeftRight}
         />
         <KpiCard
@@ -299,13 +317,13 @@ export function OverviewClient({
         />
         <KpiCard
           title="Ganancias"
-          value={formatCurrencyRound(dashboardKpis.ganancias)}
+          value={formatCurrencyRound(filteredKpis.ganancias)}
           icon={TrendingUp}
           trend="up"
         />
         <KpiCard
           title="Costos"
-          value={formatCurrencyRound(dashboardKpis.costos)}
+          value={formatCurrencyRound(filteredKpis.costos)}
           icon={Receipt}
         />
       </div>
@@ -505,7 +523,7 @@ export function OverviewClient({
             </div>
             <div className="text-center space-y-1">
               <p className="text-3xl font-bold text-emerald-600">
-                {formatCurrencyRound(dashboardKpis.ganancias)}
+                {formatCurrencyRound(filteredKpis.ganancias)}
               </p>
               <p className="text-xs text-muted-foreground">
                 {gananciaProgress.toFixed(0)}% del objetivo ({formatCurrencyRound(bestMonthTarget)})
