@@ -14,10 +14,39 @@ import {
   Legend,
 } from "recharts";
 import { DataTable, Column } from "@/components/shared/data-table";
-import { VerificationBadge } from "@/components/shared/status-badge";
 import { Movimiento } from "@/types/sheets";
-import { VERIFICATION_COLORS } from "@/lib/constants";
 import { formatCurrency, formatDate, formatCompactNumber, toDate } from "@/lib/utils";
+import { ChartCard } from "@/components/shared/info-tooltip";
+
+// Estado colors (column F values: ok, pendiente, borrador, anulado)
+const ESTADO_COLORS: Record<string, { bg: string; text: string; label: string }> = {
+  ok: { bg: "#d4edda", text: "#155724", label: "Ok" },
+  pendiente: { bg: "#fff3cd", text: "#856404", label: "Pendiente" },
+  borrador: { bg: "#cce5ff", text: "#004085", label: "Borrador" },
+  anulado: { bg: "#f8d7da", text: "#721c24", label: "Anulado" },
+};
+
+function EstadoBadge({ estado }: { estado: string }) {
+  const normalized = estado.toLowerCase().trim();
+  const config = ESTADO_COLORS[normalized];
+
+  if (!config) {
+    return (
+      <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-600">
+        {estado || "-"}
+      </span>
+    );
+  }
+
+  return (
+    <span
+      className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium"
+      style={{ backgroundColor: config.bg, color: config.text }}
+    >
+      {config.label}
+    </span>
+  );
+}
 
 interface MovimientosClientProps {
   movimientos: Movimiento[];
@@ -25,16 +54,18 @@ interface MovimientosClientProps {
 
 export function MovimientosClient({ movimientos }: MovimientosClientProps) {
   const [filterType, setFilterType] = useState<string>("all");
-  const [filterV1, setFilterV1] = useState<string>("all");
+  const [filterEstado, setFilterEstado] = useState<string>("all");
 
   const filtered = useMemo(() => {
     return movimientos.filter((m) => {
       if (filterType !== "all" && m.tipo !== filterType) return false;
-      if (filterV1 !== "all" && m.v1.toUpperCase().trim() !== filterV1)
-        return false;
+      if (filterEstado !== "all") {
+        const est = m.estado.toLowerCase().trim();
+        if (est !== filterEstado) return false;
+      }
       return true;
     });
-  }, [movimientos, filterType, filterV1]);
+  }, [movimientos, filterType, filterEstado]);
 
   // Unique types
   const types = useMemo(
@@ -57,22 +88,27 @@ export function MovimientosClient({ movimientos }: MovimientosClientProps) {
       .map(([date, value]) => ({ date, value }));
   }, [movimientos]);
 
-  // Verification stats
-  const verifStats = useMemo(() => {
-    const counts = { SI: 0, CL: 0, NO: 0, SIN: 0 };
+  // Estado stats (column F)
+  const estadoStats = useMemo(() => {
+    const counts: Record<string, number> = {};
     movimientos.forEach((m) => {
-      const v = m.v1.toUpperCase().trim();
-      if (v === "SI") counts.SI++;
-      else if (v === "CL") counts.CL++;
-      else if (v === "NO") counts.NO++;
-      else counts.SIN++;
+      const est = m.estado.toLowerCase().trim() || "sin estado";
+      counts[est] = (counts[est] || 0) + 1;
     });
-    return [
-      { name: "Verificado", value: counts.SI, color: "#d4edda" },
-      { name: "Cliente", value: counts.CL, color: "#cce5ff" },
-      { name: "No verificado", value: counts.NO, color: "#f8d7da" },
-      { name: "Sin verificar", value: counts.SIN, color: "#e2e8f0" },
-    ].filter((d) => d.value > 0);
+    const colorMap: Record<string, string> = {
+      ok: "#22c55e",
+      pendiente: "#f59e0b",
+      borrador: "#3b82f6",
+      anulado: "#ef4444",
+      "sin estado": "#94a3b8",
+    };
+    return Object.entries(counts)
+      .map(([name, value]) => ({
+        name: name.charAt(0).toUpperCase() + name.slice(1),
+        value,
+        color: colorMap[name] || "#94a3b8",
+      }))
+      .filter((d) => d.value > 0);
   }, [movimientos]);
 
   const columns: Column<Movimiento>[] = [
@@ -107,59 +143,21 @@ export function MovimientosClient({ movimientos }: MovimientosClientProps) {
       align: "right",
     },
     {
-      key: "v1",
-      header: "Verif.",
-      accessor: (r) => r.v1,
-      render: (r) => <VerificationBadge status={r.v1} />,
+      key: "estado",
+      header: "Estado",
+      accessor: (r) => r.estado,
+      render: (r) => <EstadoBadge estado={r.estado} />,
     },
   ];
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-wrap gap-3">
-        <select
-          value={filterType}
-          onChange={(e) => setFilterType(e.target.value)}
-          className="px-3 py-2 rounded-lg border bg-background text-sm"
-        >
-          <option value="all">Todos los tipos</option>
-          {types.map((t) => (
-            <option key={t} value={t}>
-              {t}
-            </option>
-          ))}
-        </select>
-        <select
-          value={filterV1}
-          onChange={(e) => setFilterV1(e.target.value)}
-          className="px-3 py-2 rounded-lg border bg-background text-sm"
-        >
-          <option value="all">Todas las verificaciones</option>
-          <option value="SI">Verificado (SI)</option>
-          <option value="CL">Cliente (CL)</option>
-          <option value="NO">No verificado (NO)</option>
-          <option value="">Sin verificar</option>
-        </select>
-      </div>
-
-      <DataTable
-        data={filtered}
-        columns={columns}
-        pageSize={50}
-        searchable
-        searchPlaceholder="Buscar por operacion, origen o destino..."
-        searchFn={(row, q) =>
-          row.op.toLowerCase().includes(q) ||
-          row.origen.toLowerCase().includes(q) ||
-          row.destino.toLowerCase().includes(q)
-        }
-      />
-
+      {/* Charts ABOVE the table */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <div className="bg-card rounded-xl border p-6">
-          <h3 className="text-sm font-medium text-muted-foreground mb-4">
-            Volumen Diario
-          </h3>
+        <ChartCard
+          title="Volumen Diario"
+          info="Volumen de importe (valor absoluto) por día. Muestra la suma de |importe| (col J) para cada fecha. Fuente: hoja Movimientos."
+        >
           <div className="h-64">
             <ResponsiveContainer width="100%" height="100%">
               <AreaChart data={dailyVolume}>
@@ -176,17 +174,17 @@ export function MovimientosClient({ movimientos }: MovimientosClientProps) {
               </AreaChart>
             </ResponsiveContainer>
           </div>
-        </div>
+        </ChartCard>
 
-        <div className="bg-card rounded-xl border p-6">
-          <h3 className="text-sm font-medium text-muted-foreground mb-4">
-            Estado de Verificacion
-          </h3>
+        <ChartCard
+          title="Estado de Movimientos"
+          info="Distribución de movimientos por estado (col F): Ok, Pendiente, Borrador, Anulado. Fuente: hoja Movimientos columna F."
+        >
           <div className="h-64">
             <ResponsiveContainer width="100%" height="100%">
               <PieChart>
                 <Pie
-                  data={verifStats}
+                  data={estadoStats}
                   cx="50%"
                   cy="50%"
                   innerRadius={60}
@@ -197,7 +195,7 @@ export function MovimientosClient({ movimientos }: MovimientosClientProps) {
                   labelLine={false}
                   fontSize={12}
                 >
-                  {verifStats.map((entry, i) => (
+                  {estadoStats.map((entry, i) => (
                     <Cell key={i} fill={entry.color} stroke="white" strokeWidth={2} />
                   ))}
                 </Pie>
@@ -206,8 +204,49 @@ export function MovimientosClient({ movimientos }: MovimientosClientProps) {
               </PieChart>
             </ResponsiveContainer>
           </div>
-        </div>
+        </ChartCard>
       </div>
+
+      {/* Filters */}
+      <div className="flex flex-wrap gap-3">
+        <select
+          value={filterType}
+          onChange={(e) => setFilterType(e.target.value)}
+          className="px-3 py-2 rounded-lg border bg-background text-sm"
+        >
+          <option value="all">Todos los tipos</option>
+          {types.map((t) => (
+            <option key={t} value={t}>
+              {t}
+            </option>
+          ))}
+        </select>
+        <select
+          value={filterEstado}
+          onChange={(e) => setFilterEstado(e.target.value)}
+          className="px-3 py-2 rounded-lg border bg-background text-sm"
+        >
+          <option value="all">Todos los estados</option>
+          <option value="ok">Ok</option>
+          <option value="pendiente">Pendiente</option>
+          <option value="borrador">Borrador</option>
+          <option value="anulado">Anulado</option>
+        </select>
+      </div>
+
+      {/* Table */}
+      <DataTable
+        data={filtered}
+        columns={columns}
+        pageSize={50}
+        searchable
+        searchPlaceholder="Buscar por operacion, origen o destino..."
+        searchFn={(row, q) =>
+          row.op.toLowerCase().includes(q) ||
+          row.origen.toLowerCase().includes(q) ||
+          row.destino.toLowerCase().includes(q)
+        }
+      />
     </div>
   );
 }

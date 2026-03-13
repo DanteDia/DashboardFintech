@@ -17,8 +17,9 @@ import {
   CartesianGrid,
 } from "recharts";
 import { KpiCard } from "@/components/shared/kpi-card";
+import { ChartCard } from "@/components/shared/info-tooltip";
 import { Operacion, Movimiento, CarteraBanco, CarteraCliente } from "@/types/sheets";
-import { OPERATION_COLORS, STATUS_COLORS, MONTHS } from "@/lib/constants";
+import { OPERATION_COLORS, MONTHS } from "@/lib/constants";
 import {
   formatCurrency,
   formatCurrencyRound,
@@ -70,9 +71,9 @@ function monthKey(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
 }
 
-function shortMonth(key: string): string {
-  const [, m] = key.split("-").map(Number);
-  return MONTHS[m - 1]?.slice(0, 3) ?? key;
+function shortMonthYear(key: string): string {
+  const [y, m] = key.split("-").map(Number);
+  return `${MONTHS[m - 1]?.slice(0, 3)} ${String(y).slice(2)}`;
 }
 
 export function OverviewClient({
@@ -212,7 +213,6 @@ export function OverviewClient({
       const d = toDate(m.fecha);
       const opCode = m.op?.trim();
       if (!d || !opCode) return;
-      // Apply type/client filters
       if (filterType !== "all" && getOpType(opCode) !== filterType) return;
       if (filterClient !== "all") {
         const opObj = operaciones.find((o) => o.operacion === opCode);
@@ -228,10 +228,10 @@ export function OverviewClient({
     return Object.entries(byMonth)
       .sort(([a], [b]) => a.localeCompare(b))
       .map(([key, v]) => ({
-        mes: shortMonth(key),
-        operaciones: v.ops.size,
-        clientes: v.clients.size,
-        ganancia: Math.round(v.ganancia),
+        mes: shortMonthYear(key),
+        Operaciones: v.ops.size,
+        Clientes: v.clients.size,
+        Ganancia: Math.round(v.ganancia),
       }));
   }, [movimientos, operaciones, filterType, filterClient]);
 
@@ -252,7 +252,7 @@ export function OverviewClient({
     });
     return Object.entries(byMonth)
       .sort(([a], [b]) => a.localeCompare(b))
-      .map(([key, val]) => ({ mes: shortMonth(key), ganancia: Math.round(val) }));
+      .map(([key, val]) => ({ mes: shortMonthYear(key), ganancia: Math.round(val) }));
   }, [movimientos, operaciones, filterType, filterClient]);
 
   // 3. Ganancia + transacciones por producto (filtered by date)
@@ -392,19 +392,19 @@ export function OverviewClient({
     <div className="space-y-6">
       {/* KPI Cards - Row 1 */}
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
-        <KpiCard title="Ingresos / Egresos" value={formatCurrencyRound(filteredKpis.ingresos)} subtitle={`Egresos: ${formatCurrencyRound(filteredKpis.egresos)}`} icon={ArrowLeftRight} />
-        <KpiCard title="# Transacciones" value={totalTransacciones.toLocaleString()} icon={Hash} />
-        <KpiCard title="# Clientes" value={String(uniqueClientCount)} icon={Users} />
-        <KpiCard title="Ganancias" value={formatCurrencyRound(filteredKpis.ganancias)} icon={TrendingUp} trend="up" />
-        <KpiCard title="Costos" value={formatCurrencyRound(filteredKpis.costos)} icon={Receipt} />
+        <KpiCard title="Ingresos / Egresos" value={formatCurrencyRound(filteredKpis.ingresos)} subtitle={`Egresos: ${formatCurrencyRound(filteredKpis.egresos)}`} icon={ArrowLeftRight} info="Ingresos: suma de importes de movimientos de entrada (col J donde col D tiene código). Egresos: suma de importes de salida (col J donde col E tiene código vinculante). Fuente: hoja Movimientos." />
+        <KpiCard title="# Transacciones" value={totalTransacciones.toLocaleString()} icon={Hash} info="Cantidad total de movimientos en el período filtrado. Fuente: hoja Movimientos." />
+        <KpiCard title="# Clientes" value={String(uniqueClientCount)} icon={Users} info="Cantidad de clientes únicos con operaciones en el período. Fuente: columna Cliente de hoja Operaciones." />
+        <KpiCard title="Ganancias" value={formatCurrencyRound(filteredKpis.ganancias)} icon={TrendingUp} trend="up" info="Suma de comisiones cobradas (col M / cImpo) en movimientos de entrada. Fuente: hoja Movimientos." />
+        <KpiCard title="Costos" value={formatCurrencyRound(filteredKpis.costos)} icon={Receipt} info="Suma del valor absoluto de costos de proveedor (col Q / dImpo). Un dImpo positivo = proveedor nos paga; negativo = nos cobra. Fuente: hoja Movimientos." />
       </div>
 
       {/* KPI Cards - Row 2 */}
       <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-        <KpiCard title="Balance Bancos" value={formatCurrencyRound(totalBancos)} icon={Landmark} />
-        <KpiCard title="Cuentas x Cobrar" value={formatCurrencyRound(cuentasPorCobrar)} icon={Users} subtitle={`${clientesNosDeben.length} clientes`} />
-        <KpiCard title="Deudas" value={formatCurrencyRound(Math.abs(deudas))} icon={AlertCircle} trend="down" subtitle={`${clientesLesDebemos.length} clientes`} />
-        <KpiCard title="Op. Abiertas" value={`${abiertas} / ${filteredOps.length}`} subtitle={`${cerradas} cerradas`} trend={abiertas > 0 ? "down" : "neutral"} />
+        <KpiCard title="Balance Bancos" value={formatCurrencyRound(totalBancos)} icon={Landmark} info="Suma de saldos USD de todos los bancos (excluye Mercury Cards). Fuente: hoja Cartera Bancos." />
+        <KpiCard title="Cuentas x Cobrar" value={formatCurrencyRound(cuentasPorCobrar)} icon={Users} subtitle={`${clientesNosDeben.length} clientes`} info="Total que nos deben los clientes (saldo positivo en USD). Fuente: hoja Cartera Clientes." />
+        <KpiCard title="Deudas" value={formatCurrencyRound(Math.abs(deudas))} icon={AlertCircle} trend="down" subtitle={`${clientesLesDebemos.length} clientes`} info="Total que debemos a clientes/proveedores (saldo negativo en USD). Fuente: hoja Cartera Clientes." />
+        <KpiCard title="Op. Abiertas" value={`${abiertas} / ${filteredOps.length}`} subtitle={`${cerradas} cerradas`} trend={abiertas > 0 ? "down" : "neutral"} info="Una operación está cerrada cuando su código aparece en col D (entrada) y col E (salida) de Movimientos, y la diferencia ingreso−egreso ≈ comisión (±$1). Fuente: hoja Movimientos." />
       </div>
 
       {/* Filters */}
@@ -434,29 +434,37 @@ export function OverviewClient({
       </div>
 
       {/* Row: Monthly Timeline (line chart) */}
-      <div className="bg-card rounded-xl border p-6">
-        <h3 className="text-sm font-medium text-muted-foreground mb-4">Evolución Mensual</h3>
+      <ChartCard
+        title="Evolución Mensual"
+        info="Línea azul: cantidad de operaciones únicas por mes. Línea violeta: clientes únicos. Línea verde: ganancia total (cImpo). Eje Y izquierdo: cantidad. Eje Y derecho: USD. Fuente: hoja Movimientos + Operaciones."
+      >
         <div className="h-72">
           <ResponsiveContainer width="100%" height="100%">
-            <LineChart data={monthlyTimeline} margin={{ left: 0, right: 10 }}>
+            <LineChart data={monthlyTimeline} margin={{ left: 5, right: 5 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
               <XAxis dataKey="mes" fontSize={11} />
-              <YAxis yAxisId="left" fontSize={11} tickFormatter={(v) => String(v)} />
-              <YAxis yAxisId="right" orientation="right" fontSize={11} tickFormatter={(v) => formatCompactNumber(v)} />
-              <Tooltip formatter={(v, name) => [name === "ganancia" ? formatCurrency(Number(v)) : String(v), name === "ganancia" ? "Ganancia" : name === "operaciones" ? "Operaciones" : "Clientes"]} />
+              <YAxis yAxisId="left" fontSize={11} tickFormatter={(v) => String(v)} label={{ value: "Cantidad", angle: -90, position: "insideLeft", style: { fontSize: 10, fill: "#94a3b8" } }} />
+              <YAxis yAxisId="right" orientation="right" fontSize={11} tickFormatter={(v) => `$${formatCompactNumber(v)}`} label={{ value: "USD", angle: 90, position: "insideRight", style: { fontSize: 10, fill: "#94a3b8" } }} />
+              {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
+              <Tooltip formatter={(v: any, name: any) => {
+                if (name === "Ganancia") return [formatCurrency(Number(v)), name];
+                return [String(v), name];
+              }} />
               <Legend />
-              <Line yAxisId="left" type="monotone" dataKey="operaciones" name="Operaciones" stroke="#4285f4" strokeWidth={2} dot={{ r: 3 }} />
-              <Line yAxisId="left" type="monotone" dataKey="clientes" name="Clientes" stroke="#9c27b0" strokeWidth={2} dot={{ r: 3 }} />
-              <Line yAxisId="right" type="monotone" dataKey="ganancia" name="Ganancia" stroke="#34a853" strokeWidth={2} dot={{ r: 3 }} />
+              <Line yAxisId="left" type="monotone" dataKey="Operaciones" stroke="#4285f4" strokeWidth={2} dot={{ r: 3 }} />
+              <Line yAxisId="left" type="monotone" dataKey="Clientes" stroke="#9c27b0" strokeWidth={2} dot={{ r: 3 }} />
+              <Line yAxisId="right" type="monotone" dataKey="Ganancia" stroke="#34a853" strokeWidth={2} dot={{ r: 3 }} />
             </LineChart>
           </ResponsiveContainer>
         </div>
-      </div>
+      </ChartCard>
 
       {/* Row: Ganancias mes a mes + Ganancias gauge */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <div className="bg-card rounded-xl border p-6">
-          <h3 className="text-sm font-medium text-muted-foreground mb-4">Ganancias Mes a Mes</h3>
+        <ChartCard
+          title="Ganancias Mes a Mes"
+          info="Ganancia total (suma de cImpo / col M) por cada mes. Aplican filtros de tipo y cliente. Fuente: hoja Movimientos."
+        >
           <div className="h-64">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={gananciasMensuales}>
@@ -467,11 +475,13 @@ export function OverviewClient({
               </BarChart>
             </ResponsiveContainer>
           </div>
-        </div>
+        </ChartCard>
 
         {/* Ganancias gauge */}
-        <div className="bg-card rounded-xl border p-6">
-          <h3 className="text-sm font-medium text-muted-foreground mb-4">Ganancias vs Mejor Mes</h3>
+        <ChartCard
+          title="Ganancias vs Mejor Mes"
+          info="Medidor de progreso: ganancias actuales vs objetivo (115% de las ganancias del mes según Dashboard). Estimado: proyección lineal de ganancias al fin de mes según ritmo actual. Fuente: hoja Movimientos + Dashboard."
+        >
           <div className="flex flex-col items-center justify-center h-64 gap-3">
             <div className="relative w-52 h-26">
               <svg viewBox="0 0 200 110" className="w-full h-full">
@@ -493,13 +503,15 @@ export function OverviewClient({
               </div>
             </div>
           </div>
-        </div>
+        </ChartCard>
       </div>
 
       {/* Row: Ganancia por producto + Margen por producto */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <div className="bg-card rounded-xl border p-6">
-          <h3 className="text-sm font-medium text-muted-foreground mb-4">Ganancia y Transacciones por Producto</h3>
+        <ChartCard
+          title="Ganancia y Transacciones por Producto"
+          info="Barras verdes: ganancia total (cImpo) por tipo de operación. Barras azules: cantidad de transacciones. Aplican filtros de mes/tipo/cliente. Fuente: hoja Movimientos."
+        >
           <div className="h-64">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={byProductData} layout="vertical" margin={{ left: 10 }}>
@@ -512,10 +524,12 @@ export function OverviewClient({
               </BarChart>
             </ResponsiveContainer>
           </div>
-        </div>
+        </ChartCard>
 
-        <div className="bg-card rounded-xl border p-6">
-          <h3 className="text-sm font-medium text-muted-foreground mb-4">Margen de Ganancia por Producto (%)</h3>
+        <ChartCard
+          title="Margen de Ganancia por Producto (%)"
+          info="Porcentaje de ganancia respecto al importe total por tipo: (cImpo / importe) × 100. Indica cuánto margen generamos por cada tipo de operación. Fuente: hoja Movimientos."
+        >
           <div className="h-64">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={marginByProduct} layout="vertical" margin={{ left: 10 }}>
@@ -528,14 +542,16 @@ export function OverviewClient({
               </BarChart>
             </ResponsiveContainer>
           </div>
-        </div>
+        </ChartCard>
       </div>
 
       {/* Row: % cobrado a clientes + Provider Dependency */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <div className="bg-card rounded-xl border p-6">
-          <h3 className="text-sm font-medium text-muted-foreground mb-1">Tasa de Comisión por Producto</h3>
-          <p className="text-xs text-muted-foreground mb-4">% que cobramos a clientes (comisión / importe)</p>
+        <ChartCard
+          title="Tasa de Comisión por Producto"
+          subtitle="% que cobramos a clientes (comisión / importe)"
+          info="Porcentaje que cobramos a clientes por tipo: (cImpo col M / importe col J) × 100. Muestra la tasa efectiva de comisión por producto. Fuente: hoja Movimientos."
+        >
           <div className="h-64">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={chargeRateByType} layout="vertical" margin={{ left: 10 }}>
@@ -548,11 +564,13 @@ export function OverviewClient({
               </BarChart>
             </ResponsiveContainer>
           </div>
-        </div>
+        </ChartCard>
 
-        <div className="bg-card rounded-xl border p-6">
-          <h3 className="text-sm font-medium text-muted-foreground mb-1">Dependencia de Proveedores</h3>
-          <p className="text-xs text-muted-foreground mb-4">Ganancia vs Costo proveedor por tipo</p>
+        <ChartCard
+          title="Dependencia de Proveedores"
+          subtitle="Ganancia vs Costo proveedor por tipo"
+          info="Verde: nuestra ganancia (cImpo col M). Rojo: costo de proveedor (|dImpo| col Q). dImpo positivo = proveedor nos paga; negativo = nos cobra. Agrupado por tipo de operación. Fuente: hoja Movimientos."
+        >
           <div className="h-64">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={providerDependency} layout="vertical" margin={{ left: 10, right: 10 }}>
@@ -565,13 +583,15 @@ export function OverviewClient({
               </BarChart>
             </ResponsiveContainer>
           </div>
-        </div>
+        </ChartCard>
       </div>
 
       {/* Row: Top Clients (recurrent + profitable) */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <div className="bg-card rounded-xl border p-6">
-          <h3 className="text-sm font-medium text-muted-foreground mb-4">Clientes Más Recurrentes</h3>
+        <ChartCard
+          title="Clientes Más Recurrentes"
+          info="Top 10 clientes por cantidad de transacciones (movimientos de entrada). Aplican filtros activos. Fuente: hoja Movimientos + Operaciones."
+        >
           <div className="h-64">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={topRecurrentClients} layout="vertical" margin={{ left: 10 }}>
@@ -582,10 +602,12 @@ export function OverviewClient({
               </BarChart>
             </ResponsiveContainer>
           </div>
-        </div>
+        </ChartCard>
 
-        <div className="bg-card rounded-xl border p-6">
-          <h3 className="text-sm font-medium text-muted-foreground mb-4">Mejores Clientes (Mayor Ganancia)</h3>
+        <ChartCard
+          title="Mejores Clientes (Mayor Ganancia)"
+          info="Top 10 clientes por ganancia total generada (suma de cImpo). Aplican filtros activos. Fuente: hoja Movimientos + Operaciones."
+        >
           <div className="h-64">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={topProfitClients} layout="vertical" margin={{ left: 10 }}>
@@ -596,13 +618,15 @@ export function OverviewClient({
               </BarChart>
             </ResponsiveContainer>
           </div>
-        </div>
+        </ChartCard>
       </div>
 
       {/* Row: Bank Balance + Operations Status */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <div className="bg-card rounded-xl border p-6">
-          <h3 className="text-sm font-medium text-muted-foreground mb-4">Top Bancos por Saldo</h3>
+        <ChartCard
+          title="Top Bancos por Saldo"
+          info="Top 8 bancos por saldo USD (valor absoluto). Excluye Mercury Cards. Fuente: hoja Cartera Bancos."
+        >
           <div className="h-64">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={bankData} layout="vertical" margin={{ left: 10 }}>
@@ -613,10 +637,12 @@ export function OverviewClient({
               </BarChart>
             </ResponsiveContainer>
           </div>
-        </div>
+        </ChartCard>
 
-        <div className="bg-card rounded-xl border p-6">
-          <h3 className="text-sm font-medium text-muted-foreground mb-4">Estado de Operaciones</h3>
+        <ChartCard
+          title="Estado de Operaciones"
+          info="Operaciones cerradas vs abiertas. Cerrada: el código de op aparece en col D y col E de Movimientos, y la diferencia ingreso−egreso coincide con la comisión (±$1). Fuente: hoja Movimientos."
+        >
           <div className="h-64">
             <ResponsiveContainer width="100%" height="100%">
               <PieChart>
@@ -628,7 +654,7 @@ export function OverviewClient({
               </PieChart>
             </ResponsiveContainer>
           </div>
-        </div>
+        </ChartCard>
       </div>
     </div>
   );

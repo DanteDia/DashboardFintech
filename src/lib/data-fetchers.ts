@@ -64,12 +64,14 @@ export const getOperacionesData = unstable_cache(
 // Clientes page data
 export const getClientesData = unstable_cache(
   async () => {
-    const [clientesRows] = await fetchSheetRanges([
+    const [clientesRows, movimientosRows] = await fetchSheetRanges([
       SHEET_CONFIG.carteraClientes.range,
+      SHEET_CONFIG.movimientos.range,
     ]);
 
     return {
       clientes: transformCarteraClientes(clientesRows),
+      movimientos: transformMovimientos(movimientosRows),
     };
   },
   ["clientes-data"],

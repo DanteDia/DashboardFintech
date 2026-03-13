@@ -1,5 +1,6 @@
 import { cn } from "@/lib/utils";
 import { LucideIcon } from "lucide-react";
+import { InfoTooltip } from "./info-tooltip";
 
 interface KpiCardProps {
   title: string;
@@ -8,6 +9,7 @@ interface KpiCardProps {
   icon?: LucideIcon;
   trend?: "up" | "down" | "neutral";
   className?: string;
+  info?: string;
 }
 
 export function KpiCard({
@@ -17,6 +19,7 @@ export function KpiCard({
   icon: Icon,
   trend,
   className,
+  info,
 }: KpiCardProps) {
   return (
     <div
@@ -26,7 +29,10 @@ export function KpiCard({
       )}
     >
       <div className="flex items-center justify-between">
-        <p className="text-sm font-medium text-muted-foreground">{title}</p>
+        <div className="flex items-center gap-1.5">
+          <p className="text-sm font-medium text-muted-foreground">{title}</p>
+          {info && <InfoTooltip text={info} />}
+        </div>
         {Icon && (
           <div className="p-2 rounded-lg bg-muted">
             <Icon className="w-4 h-4 text-muted-foreground" />

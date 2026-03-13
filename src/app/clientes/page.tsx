@@ -4,14 +4,14 @@ import { PageContainer } from "@/components/layout/page-container";
 import { ClientesClient } from "@/components/clientes/clientes-client";
 
 export default async function ClientesPage() {
-  const { clientes } = await getClientesData();
+  const { clientes, movimientos } = await getClientesData();
 
   return (
     <PageContainer
       title="Cartera Clientes"
       description={`${clientes.length} clientes registrados`}
     >
-      <ClientesClient clientes={clientes} />
+      <ClientesClient clientes={clientes} movimientos={movimientos} />
     </PageContainer>
   );
 }
