@@ -36,19 +36,11 @@ import {
   ArrowLeftRight,
 } from "lucide-react";
 
-interface DashboardKpis {
-  ingresos: number;
-  egresos: number;
-  costos: number;
-  ganancias: number;
-}
-
 interface OverviewClientProps {
   operaciones: Operacion[];
   movimientos: Movimiento[];
   bancos: CarteraBanco[];
   clientes: CarteraCliente[];
-  dashboardKpis: DashboardKpis;
   mesAno: string;
 }
 
@@ -81,7 +73,6 @@ export function OverviewClient({
   movimientos,
   bancos: rawBancos,
   clientes,
-  dashboardKpis,
   mesAno,
 }: OverviewClientProps) {
   const bancos = rawBancos.filter((b) => !isMercuryCards(b.cliente));
@@ -175,17 +166,15 @@ export function OverviewClient({
   const totalTransacciones = filteredMovimientos.length;
   const uniqueClientCount = new Set(filteredOps.map((o) => o.cliente).filter(Boolean)).size;
 
-  // Filtered KPIs from movimientos
+  // KPIs always computed from movimientos (not from Dashboard sheet)
   const filteredKpis = useMemo(() => {
-    const anyFilterActive = filterMonth !== "all" || filterType !== "all" || filterClient !== "all";
-    if (!anyFilterActive) return dashboardKpis;
     let ingresos = 0, egresos = 0, ganancias = 0, costos = 0;
     filteredMovimientos.forEach((m) => {
       if (m.op?.trim()) { ingresos += m.importe ?? 0; ganancias += m.cImpo ?? 0; costos += Math.abs(m.dImpo ?? 0); }
       if (m.vinculante?.trim()) { egresos += m.importe ?? 0; }
     });
     return { ingresos, egresos, ganancias, costos };
-  }, [filteredMovimientos, dashboardKpis, filterMonth, filterType, filterClient]);
+  }, [filteredMovimientos]);
 
   // Bank totals
   const totalBancos = bancos.reduce((sum, b) => sum + (b.usdSaldo ?? 0), 0);
@@ -301,28 +290,7 @@ export function OverviewClient({
       .sort((a, b) => b.margen - a.margen);
   }, [filteredMovimientos]);
 
-  // 5. % cobrado a clientes: cImpo (col M) / importe (col J)
-  const chargeRateByType = useMemo(() => {
-    const byType: Record<string, { comision: number; importe: number }> = {};
-    filteredMovimientos.forEach((m) => {
-      const opCode = m.op?.trim();
-      if (!opCode) return;
-      const tipo = getOpType(opCode);
-      if (!byType[tipo]) byType[tipo] = { comision: 0, importe: 0 };
-      byType[tipo].comision += m.cImpo ?? 0;
-      byType[tipo].importe += m.importe ?? 0;
-    });
-    return Object.entries(byType)
-      .filter(([, v]) => v.importe > 0)
-      .map(([name, v]) => ({
-        name,
-        tasa: Number(((v.comision / v.importe) * 100).toFixed(2)),
-        color: OPERATION_COLORS[name] || "#94a3b8",
-      }))
-      .sort((a, b) => b.tasa - a.tasa);
-  }, [filteredMovimientos]);
-
-  // 6. Clientes más recurrentes + mejores clientes
+  // 5. Clientes más recurrentes + mejores clientes
   const topRecurrentClients = useMemo(() => {
     const byClient: Record<string, number> = {};
     filteredMovimientos.forEach((m) => {
@@ -368,8 +336,19 @@ export function OverviewClient({
       .sort((a, b) => b.ganancia + b.costo - (a.ganancia + a.costo));
   }, [filteredMovimientos]);
 
-  // Ganancias gauge
-  const bestMonthTarget = Math.max(dashboardKpis.ganancias * 1.15, 1);
+  // Ganancias gauge — target = best historical month from movimientos
+  const allMonthlyGanancias = useMemo(() => {
+    const byMonth: Record<string, number> = {};
+    movimientos.forEach((m) => {
+      const d = toDate(m.fecha);
+      if (!d) return;
+      const mk = monthKey(d);
+      byMonth[mk] = (byMonth[mk] || 0) + (m.cImpo ?? 0);
+    });
+    return byMonth;
+  }, [movimientos]);
+  const bestMonthGanancia = Math.max(...Object.values(allMonthlyGanancias), 1);
+  const bestMonthTarget = Math.max(bestMonthGanancia * 1.15, 1);
   const gananciaProgress = Math.min((filteredKpis.ganancias / bestMonthTarget) * 100, 100);
   const today = new Date();
   const dayOfMonth = today.getDate();
@@ -554,46 +533,25 @@ export function OverviewClient({
         </ChartCard>
       </div>
 
-      {/* Row: % cobrado a clientes + Provider Dependency */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <ChartCard
-          title="Tasa de Comisión por Producto"
-          subtitle="% que cobramos a clientes (comisión / importe)"
-          info="Porcentaje que cobramos a clientes por tipo: (cImpo col M / importe col J) × 100. Muestra la tasa efectiva de comisión por producto. Fuente: hoja Movimientos."
-        >
-          <div className="h-64">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={chargeRateByType} layout="vertical" margin={{ left: 10 }}>
-                <XAxis type="number" domain={[0, "auto"]} tickFormatter={(v) => `${v}%`} fontSize={11} />
-                <YAxis type="category" dataKey="name" width={110} fontSize={11} tick={{ fill: "#64748b" }} />
-                <Tooltip formatter={(v) => [`${v}%`, "Tasa"]} />
-                <Bar dataKey="tasa" radius={[0, 4, 4, 0]}>
-                  {chargeRateByType.map((entry, i) => <Cell key={i} fill={entry.color} />)}
-                </Bar>
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-        </ChartCard>
-
-        <ChartCard
-          title="Dependencia de Proveedores"
-          subtitle="Ganancia vs Costo proveedor por tipo"
-          info="Verde: nuestra ganancia (cImpo col M). Rojo: costo de proveedor (|dImpo| col Q). dImpo positivo = proveedor nos paga; negativo = nos cobra. Agrupado por tipo de operación. Fuente: hoja Movimientos."
-        >
-          <div className="h-64">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={providerDependency} layout="vertical" margin={{ left: 10, right: 10 }}>
-                <XAxis type="number" tickFormatter={(v) => formatCompactNumber(v)} fontSize={11} />
-                <YAxis type="category" dataKey="name" width={110} fontSize={11} tick={{ fill: "#64748b" }} />
-                <Tooltip formatter={(v, name) => [formatCurrency(Number(v)), name === "ganancia" ? "Ganancia" : "Costo proveedor"]} />
-                <Legend />
-                <Bar dataKey="ganancia" name="Ganancia" stackId="a" fill="#34a853" />
-                <Bar dataKey="costo" name="Costo proveedor" stackId="a" fill="#ea4335" radius={[0, 4, 4, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-        </ChartCard>
-      </div>
+      {/* Row: Provider Dependency */}
+      <ChartCard
+        title="Dependencia de Proveedores"
+        subtitle="Ganancia vs Costo proveedor por tipo"
+        info="Verde: nuestra ganancia (cImpo col M). Rojo: costo de proveedor (|dImpo| col Q). dImpo positivo = proveedor nos paga; negativo = nos cobra. Agrupado por tipo de operación. Fuente: hoja Movimientos."
+      >
+        <div className="h-64">
+          <ResponsiveContainer width="100%" height="100%">
+            <BarChart data={providerDependency} layout="vertical" margin={{ left: 10, right: 10 }}>
+              <XAxis type="number" tickFormatter={(v) => formatCompactNumber(v)} fontSize={11} />
+              <YAxis type="category" dataKey="name" width={110} fontSize={11} tick={{ fill: "#64748b" }} />
+              <Tooltip formatter={(v, name) => [formatCurrency(Number(v)), name === "ganancia" ? "Ganancia" : "Costo proveedor"]} />
+              <Legend />
+              <Bar dataKey="ganancia" name="Ganancia" stackId="a" fill="#34a853" />
+              <Bar dataKey="costo" name="Costo proveedor" stackId="a" fill="#ea4335" radius={[0, 4, 4, 0]} />
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+      </ChartCard>
 
       {/* Row: Top Clients (recurrent + profitable) */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">

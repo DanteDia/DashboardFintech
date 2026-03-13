@@ -73,20 +73,26 @@ export function MovimientosClient({ movimientos }: MovimientosClientProps) {
     [movimientos]
   );
 
-  // Daily volume - sort by actual timestamp to handle date format issues
+  // Daily volume - sort by timestamp, display as DD/MM Argentine format
   const dailyVolume = useMemo(() => {
-    const map: Record<string, { value: number; ts: number }> = {};
+    const map: Record<string, { value: number; ts: number; day: number; month: number }> = {};
     movimientos.forEach((m) => {
       const d = toDate(m.fecha);
       if (!d || isNaN(d.getTime())) return;
-      // Normalize to YYYY-MM-DD using local date parts to avoid timezone shifts
-      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-      if (!map[key]) map[key] = { value: 0, ts: d.getTime() };
+      const day = d.getDate();
+      const month = d.getMonth() + 1;
+      const year = d.getFullYear();
+      // Use YYYY-MM-DD as internal key for grouping
+      const key = `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+      if (!map[key]) map[key] = { value: 0, ts: d.getTime(), day, month };
       map[key].value += Math.abs(m.importe ?? 0);
     });
     return Object.entries(map)
-      .sort(([, a], [, b]) => a.ts - b.ts)
-      .map(([date, { value }]) => ({ date, value }));
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([, { value, day, month }]) => ({
+        date: `${String(day).padStart(2, "0")}/${String(month).padStart(2, "0")}`,
+        value,
+      }));
   }, [movimientos]);
 
   // Estado stats (column F)

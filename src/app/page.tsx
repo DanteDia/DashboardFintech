@@ -7,9 +7,6 @@ export default async function OverviewPage() {
   const { dashboard, bancos, clientes, operaciones, movimientos } =
     await getOverviewData();
 
-  // Get USD KPIs from dashboard sheet
-  const usdData = dashboard.monedas.find((m) => m.moneda === "USD");
-
   return (
     <PageContainer
       title="Overview"
@@ -20,12 +17,6 @@ export default async function OverviewPage() {
         movimientos={movimientos}
         bancos={bancos}
         clientes={clientes}
-        dashboardKpis={{
-          ingresos: usdData?.ingresos ?? 0,
-          egresos: usdData?.egresos ?? 0,
-          costos: usdData?.costo1 ?? 0,
-          ganancias: usdData?.ganancias ?? 0,
-        }}
         mesAno={`${dashboard.mes ?? "-"} / ${dashboard.ano ?? "-"}`}
       />
     </PageContainer>
