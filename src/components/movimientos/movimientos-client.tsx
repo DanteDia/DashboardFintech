@@ -73,19 +73,20 @@ export function MovimientosClient({ movimientos }: MovimientosClientProps) {
     [movimientos]
   );
 
-  // Daily volume
+  // Daily volume - sort by actual timestamp to handle date format issues
   const dailyVolume = useMemo(() => {
-    const map: Record<string, number> = {};
+    const map: Record<string, { value: number; ts: number }> = {};
     movimientos.forEach((m) => {
       const d = toDate(m.fecha);
-      if (d) {
-        const key = d.toISOString().slice(0, 10);
-        map[key] = (map[key] || 0) + Math.abs(m.importe ?? 0);
-      }
+      if (!d || isNaN(d.getTime())) return;
+      // Normalize to YYYY-MM-DD using local date parts to avoid timezone shifts
+      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+      if (!map[key]) map[key] = { value: 0, ts: d.getTime() };
+      map[key].value += Math.abs(m.importe ?? 0);
     });
     return Object.entries(map)
-      .sort(([a], [b]) => a.localeCompare(b))
-      .map(([date, value]) => ({ date, value }));
+      .sort(([, a], [, b]) => a.ts - b.ts)
+      .map(([date, { value }]) => ({ date, value }));
   }, [movimientos]);
 
   // Estado stats (column F)

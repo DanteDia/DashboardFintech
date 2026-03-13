@@ -206,24 +206,33 @@ export function OverviewClient({
 
   // ─── CHART DATA ───
 
-  // 1. Monthly timeline: operaciones, clientes únicos, ganancia
+  // 1. Monthly timeline from movimientos only:
+  // - Clientes: unique names from col H (origen) + col I (destino), empties don't count
+  // - Ganancias: sum of col M (cImpo) + col Q (dImpo)
+  // - Operaciones: unique op codes from col D (op) + col E (vinculante), empties don't count
   const monthlyTimeline = useMemo(() => {
     const byMonth: Record<string, { ops: Set<string>; clients: Set<string>; ganancia: number }> = {};
     movimientos.forEach((m) => {
       const d = toDate(m.fecha);
+      if (!d) return;
+      // Apply filters
       const opCode = m.op?.trim();
-      if (!d || !opCode) return;
-      if (filterType !== "all" && getOpType(opCode) !== filterType) return;
+      if (filterType !== "all" && opCode && getOpType(opCode) !== filterType) return;
       if (filterClient !== "all") {
-        const opObj = operaciones.find((o) => o.operacion === opCode);
-        if (opObj && opObj.cliente !== filterClient) return;
+        const hasClient = m.origen === filterClient || m.destino === filterClient;
+        if (!hasClient) return;
       }
       const mk = monthKey(d);
       if (!byMonth[mk]) byMonth[mk] = { ops: new Set(), clients: new Set(), ganancia: 0 };
-      byMonth[mk].ops.add(opCode);
-      const opObj = operaciones.find((o) => o.operacion === opCode);
-      if (opObj?.cliente) byMonth[mk].clients.add(opObj.cliente);
-      byMonth[mk].ganancia += m.cImpo ?? 0;
+      // Ops: unique codes from col D and col E (non-empty)
+      if (opCode) byMonth[mk].ops.add(opCode);
+      const vincCode = m.vinculante?.trim();
+      if (vincCode) byMonth[mk].ops.add(vincCode);
+      // Clients: unique names from col H (origen) and col I (destino) (non-empty)
+      if (m.origen?.trim()) byMonth[mk].clients.add(m.origen.trim());
+      if (m.destino?.trim()) byMonth[mk].clients.add(m.destino.trim());
+      // Ganancias: sum of col M (cImpo) + col Q (dImpo)
+      byMonth[mk].ganancia += (m.cImpo ?? 0) + (m.dImpo ?? 0);
     });
     return Object.entries(byMonth)
       .sort(([a], [b]) => a.localeCompare(b))
@@ -233,7 +242,7 @@ export function OverviewClient({
         Clientes: v.clients.size,
         Ganancia: Math.round(v.ganancia),
       }));
-  }, [movimientos, operaciones, filterType, filterClient]);
+  }, [movimientos, filterType, filterClient]);
 
   // 2. Ganancias mes a mes (bar chart)
   const gananciasMensuales = useMemo(() => {

@@ -8,6 +8,7 @@ import {
   YAxis,
   Tooltip,
   ResponsiveContainer,
+  Cell,
 } from "recharts";
 import { DataTable, Column } from "@/components/shared/data-table";
 import { CarteraCliente, Movimiento } from "@/types/sheets";
@@ -21,38 +22,28 @@ interface ClientesClientProps {
   movimientos: Movimiento[];
 }
 
+const AGING_BUCKETS = [
+  { key: "≤ 1 semana", maxDays: 7 },
+  { key: "1-2 semanas", maxDays: 14 },
+  { key: "> 2 semanas", maxDays: Infinity },
+] as const;
+
 function debtAgingLabel(days: number): string {
-  if (days <= 7) return "≤ 1 semana";
-  if (days <= 14) return "1-2 semanas";
-  if (days <= 30) return "2-4 semanas";
-  if (days <= 60) return "1-2 meses";
-  return "> 2 meses";
+  for (const b of AGING_BUCKETS) {
+    if (days <= b.maxDays) return b.key;
+  }
+  return "> 2 semanas";
 }
 
 function debtAgingColor(days: number): string {
   if (days <= 7) return "bg-emerald-100 text-emerald-700";
   if (days <= 14) return "bg-yellow-100 text-yellow-700";
-  if (days <= 30) return "bg-orange-100 text-orange-700";
-  if (days <= 60) return "bg-red-100 text-red-700";
-  return "bg-red-200 text-red-800";
+  return "bg-red-100 text-red-700";
 }
 
 export function ClientesClient({ clientes, movimientos }: ClientesClientProps) {
   const [filterType, setFilterType] = useState<string>("all");
-
-  const filtered = useMemo(() => {
-    if (filterType === "all") return clientes;
-    return clientes.filter(
-      (c) => c.tipo?.toLowerCase() === filterType.toLowerCase()
-    );
-  }, [clientes, filterType]);
-
-  // Use ALL clients for KPIs (matches column H filter in sheet)
-  const nosDeben = clientes.filter((c) => (c.usdSaldo ?? 0) > 0);
-  const lesDebemos = clientes.filter((c) => (c.usdSaldo ?? 0) < 0);
-
-  const porCobrar = nosDeben.reduce((sum, c) => sum + (c.usdSaldo ?? 0), 0);
-  const deudas = lesDebemos.reduce((sum, c) => sum + Math.abs(c.usdSaldo ?? 0), 0);
+  const [filterAging, setFilterAging] = useState<string>("all");
 
   // Debt aging: find last movimiento date per client and compute days since
   const clientDebtAging = useMemo(() => {
@@ -61,7 +52,6 @@ export function ClientesClient({ clientes, movimientos }: ClientesClientProps) {
     movimientos.forEach((m) => {
       const d = toDate(m.fecha);
       if (!d) return;
-      // Check both origen and destino for the client
       const names = [m.origen, m.destino].filter(Boolean);
       names.forEach((name) => {
         if (!lastMovDate[name] || d > lastMovDate[name]) {
@@ -75,22 +65,44 @@ export function ClientesClient({ clientes, movimientos }: ClientesClientProps) {
       if (last) {
         map[c.cliente] = Math.floor((now.getTime() - last.getTime()) / (1000 * 60 * 60 * 24));
       } else {
-        map[c.cliente] = 999; // no movement found
+        map[c.cliente] = 999;
       }
     });
     return map;
   }, [clientes, movimientos]);
 
-  // Aging distribution for debtors
+  // Apply both type and aging filters
+  const filtered = useMemo(() => {
+    let result = clientes;
+    if (filterType !== "all") {
+      result = result.filter((c) => c.tipo?.toLowerCase() === filterType.toLowerCase());
+    }
+    if (filterAging !== "all") {
+      result = result.filter((c) => {
+        if ((c.usdSaldo ?? 0) <= 0) return false;
+        const days = clientDebtAging[c.cliente] ?? 999;
+        return debtAgingLabel(days) === filterAging;
+      });
+    }
+    return result;
+  }, [clientes, filterType, filterAging, clientDebtAging]);
+
+  // Use ALL clients for KPIs (unless aging filter active)
+  const relevantClientes = filterAging !== "all" ? filtered : clientes;
+  const nosDeben = relevantClientes.filter((c) => (c.usdSaldo ?? 0) > 0);
+  const lesDebemos = relevantClientes.filter((c) => (c.usdSaldo ?? 0) < 0);
+
+  const porCobrar = nosDeben.reduce((sum, c) => sum + (c.usdSaldo ?? 0), 0);
+  const deudas = lesDebemos.reduce((sum, c) => sum + Math.abs(c.usdSaldo ?? 0), 0);
+
+  // Aging distribution for debtors (always computed from all clients)
   const agingDistribution = useMemo(() => {
-    const buckets: Record<string, { count: number; total: number }> = {
-      "≤ 1 semana": { count: 0, total: 0 },
-      "1-2 semanas": { count: 0, total: 0 },
-      "2-4 semanas": { count: 0, total: 0 },
-      "1-2 meses": { count: 0, total: 0 },
-      "> 2 meses": { count: 0, total: 0 },
-    };
-    nosDeben.forEach((c) => {
+    const allDebtors = clientes.filter((c) => (c.usdSaldo ?? 0) > 0);
+    const buckets: Record<string, { count: number; total: number }> = {};
+    for (const b of AGING_BUCKETS) {
+      buckets[b.key] = { count: 0, total: 0 };
+    }
+    allDebtors.forEach((c) => {
       const days = clientDebtAging[c.cliente] ?? 999;
       const label = debtAgingLabel(days);
       buckets[label].count++;
@@ -99,7 +111,7 @@ export function ClientesClient({ clientes, movimientos }: ClientesClientProps) {
     return Object.entries(buckets)
       .filter(([, v]) => v.count > 0)
       .map(([name, v]) => ({ name, clientes: v.count, monto: Math.round(v.total) }));
-  }, [nosDeben, clientDebtAging]);
+  }, [clientes, clientDebtAging]);
 
   const topDeudores = useMemo(
     () =>
@@ -107,10 +119,7 @@ export function ClientesClient({ clientes, movimientos }: ClientesClientProps) {
         .sort((a, b) => (b.usdSaldo ?? 0) - (a.usdSaldo ?? 0))
         .slice(0, 10)
         .map((c) => ({
-          name:
-            c.cliente.length > 20
-              ? c.cliente.slice(0, 20) + "..."
-              : c.cliente,
+          name: c.cliente.length > 20 ? c.cliente.slice(0, 20) + "..." : c.cliente,
           saldo: c.usdSaldo ?? 0,
         })),
     [nosDeben]
@@ -122,14 +131,18 @@ export function ClientesClient({ clientes, movimientos }: ClientesClientProps) {
         .sort((a, b) => (a.usdSaldo ?? 0) - (b.usdSaldo ?? 0))
         .slice(0, 10)
         .map((c) => ({
-          name:
-            c.cliente.length > 20
-              ? c.cliente.slice(0, 20) + "..."
-              : c.cliente,
+          name: c.cliente.length > 20 ? c.cliente.slice(0, 20) + "..." : c.cliente,
           saldo: Math.abs(c.usdSaldo ?? 0),
         })),
     [lesDebemos]
   );
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const handleAgingBarClick = (data: any) => {
+    if (data && data.activeLabel) {
+      setFilterAging((prev) => (prev === data.activeLabel ? "all" : data.activeLabel));
+    }
+  };
 
   const columns: Column<CarteraCliente>[] = [
     { key: "cliente", header: "Cliente", accessor: (r) => r.cliente },
@@ -260,31 +273,51 @@ export function ClientesClient({ clientes, movimientos }: ClientesClientProps) {
 
         <ChartCard
           title="Antigüedad de Deudas"
-          info="Distribución de clientes que nos deben según hace cuánto fue su último movimiento. Muestra cantidad de clientes y monto por rango de tiempo. Fuente: hoja Movimientos + Cartera Clientes."
+          subtitle={filterAging !== "all" ? `Filtro: ${filterAging} (click para quitar)` : "Click en barra para filtrar"}
+          info="Distribución de clientes que nos deben según hace cuánto fue su último movimiento. Clickeá una barra para filtrar tabla y gráficos. Fuente: hoja Movimientos + Cartera Clientes."
         >
-          <div className="h-64">
+          <div className="h-56">
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={agingDistribution} layout="vertical" margin={{ left: 10 }}>
+              <BarChart data={agingDistribution} layout="vertical" margin={{ left: 10 }} onClick={handleAgingBarClick} style={{ cursor: "pointer" }}>
                 <XAxis type="number" tickFormatter={(v) => formatCompactNumber(v)} fontSize={12} />
                 <YAxis type="category" dataKey="name" width={100} fontSize={11} tick={{ fill: "#64748b" }} />
-                <Tooltip formatter={(v, name) => [name === "monto" ? formatCurrency(Number(v)) : String(v), name === "monto" ? "Monto" : "Clientes"]} />
-                <Bar dataKey="monto" name="Monto" fill="#f59e0b" radius={[0, 4, 4, 0]} />
+                {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
+                <Tooltip formatter={(v: any, name: any) => [name === "monto" ? formatCurrency(Number(v)) : String(v), name === "monto" ? "Monto" : "Clientes"]} />
+                <Bar dataKey="monto" name="Monto" radius={[0, 4, 4, 0]}>
+                  {agingDistribution.map((entry, i) => (
+                    <Cell
+                      key={i}
+                      fill={filterAging === "all" || filterAging === entry.name ? "#f59e0b" : "#e5e7eb"}
+                    />
+                  ))}
+                </Bar>
               </BarChart>
             </ResponsiveContainer>
           </div>
         </ChartCard>
       </div>
 
-      {/* Filter */}
-      <select
-        value={filterType}
-        onChange={(e) => setFilterType(e.target.value)}
-        className="px-3 py-2 rounded-lg border bg-background text-sm"
-      >
-        <option value="all">Todos</option>
-        <option value="cliente">Clientes</option>
-        <option value="banco">Bancos</option>
-      </select>
+      {/* Filters */}
+      <div className="flex flex-wrap gap-3 items-center">
+        <select
+          value={filterType}
+          onChange={(e) => setFilterType(e.target.value)}
+          className="px-3 py-2 rounded-lg border bg-background text-sm"
+        >
+          <option value="all">Todos</option>
+          <option value="cliente">Clientes</option>
+          <option value="banco">Bancos</option>
+        </select>
+        {filterAging !== "all" && (
+          <button
+            onClick={() => setFilterAging("all")}
+            className="px-3 py-1.5 rounded-lg bg-amber-100 text-amber-800 text-sm font-medium flex items-center gap-1.5 hover:bg-amber-200 transition-colors"
+          >
+            Antigüedad: {filterAging}
+            <span className="text-amber-600">✕</span>
+          </button>
+        )}
+      </div>
 
       {/* Table */}
       <DataTable
